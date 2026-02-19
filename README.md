@@ -1,4 +1,4 @@
-# Isolated Crustaion
+# Isolated Crustacean
 
 Run Claude Code inside a network-isolated Docker container where all internet traffic is forced through a tinyproxy allowlist proxy. This prevents Claude Code from reaching any domain not explicitly permitted.
 
