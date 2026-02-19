@@ -6,6 +6,10 @@ RUN apt-get update \
 
 RUN npm install -g @anthropic-ai/claude-code
 
+COPY banner.sh /usr/local/bin/banner.sh
+RUN chmod +x /usr/local/bin/banner.sh \
+    && echo 'source /usr/local/bin/banner.sh' >> /etc/bash.bashrc
+
 USER node
 WORKDIR /home/node/workspace
 

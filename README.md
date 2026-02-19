@@ -1,5 +1,20 @@
 # Isolated Crustacean
 
+```
+    +============================+
+    |  ////  ////  ////  ////    |
+    |============================|
+    |  _,,_         _,,_         |
+    | (o  o)  \./  (o  o)        |
+    |  \_/  --( )-- \_/          |
+    | /|||\ / | \ /|||\          |
+    |============================|
+    |  ////  ////  ////  ////    |
+    +============================+
+      ISOLATED CRUSTACEAN
+      Network-isolated Claude Code
+```
+
 Run Claude Code inside a network-isolated Docker container where all internet traffic is forced through a tinyproxy allowlist proxy. This prevents Claude Code from reaching any domain not explicitly permitted.
 
 ## Architecture
