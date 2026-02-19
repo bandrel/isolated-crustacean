@@ -17,6 +17,7 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 
 ## Key Files
 
+- `hermit` - CLI wrapper for all common operations
 - `docker-compose.yml` - service definitions, network topology, volume mounts
 - `claude-code/Dockerfile` - Claude Code container image (node:20-slim + git + claude-code CLI)
 - `tinyproxy/Dockerfile` - proxy container image (alpine + tinyproxy)
@@ -25,31 +26,45 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 
 ## Common Commands
 
+Use the `hermit` wrapper script for all operations:
+
 ```bash
 # Build containers
-docker compose build
+./hermit build
 
 # Start interactive session
+./hermit start
+
+# Full rebuild (after allowlist changes, etc.)
+./hermit rebuild
+
+# Run all isolation verification tests
+./hermit test
+
+# Show tinyproxy logs (add -f to follow)
+./hermit logs
+./hermit logs -f
+
+# Stop all containers
+./hermit stop
+
+# Show container status
+./hermit status
+```
+
+For reference, the underlying docker compose commands are:
+
+```bash
+docker compose build
 docker compose run --rm claude-code
-
-# Rebuild only the proxy (e.g. after editing allowlist)
 docker compose build tinyproxy
-
-# Verify isolation - direct access should fail
-docker compose run --rm claude-code -c "curl -s --max-time 5 https://google.com"
-
-# Verify isolation - non-allowlisted domain should get 403
-docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://google.com"
-
-# Verify isolation - allowlisted domain should succeed
-docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://api.anthropic.com"
-
-# Check proxy logs
 docker compose logs tinyproxy
+docker compose ps
+docker compose down
 ```
 
 ## Allowlist
 
-Edit `tinyproxy/allowlist` to add/remove domains. Each line is an anchored ERE regex (e.g., `^example\.com$` for exact match, `^(.+\.)?example\.com$` to include subdomains). After changes, rebuild with `docker compose build tinyproxy`. The filter uses `FilterDefaultDeny Yes` so only explicitly matched domains are allowed.
+Edit `tinyproxy/allowlist` to add/remove domains. Each line is an anchored ERE regex (e.g., `^example\.com$` for exact match, `^(.+\.)?example\.com$` to include subdomains). After changes, rebuild with `./hermit rebuild`. The filter uses `FilterDefaultDeny Yes` so only explicitly matched domains are allowed.
 
 Default allowed domains cover: Anthropic API/auth, statsig (feature flags), sentry (error reporting), npm registry, and GitHub.

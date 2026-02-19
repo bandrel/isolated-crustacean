@@ -37,7 +37,7 @@ Run Claude Code inside a network-isolated Docker container where all internet tr
 ## Setup
 
 ```bash
-docker compose build
+./hermit build
 ```
 
 ## Usage
@@ -45,7 +45,7 @@ docker compose build
 ### Start the environment
 
 ```bash
-docker compose run --rm claude-code
+./hermit start
 ```
 
 This drops you into a bash shell inside the isolated container.
@@ -91,7 +91,7 @@ Or use a bind mount instead by editing `docker-compose.yml`.
 Edit `tinyproxy/allowlist` to add or remove domains. Each line is an anchored ERE regex pattern. After editing, rebuild:
 
 ```bash
-docker compose build tinyproxy
+./hermit rebuild
 ```
 
 Default allowed domains:
@@ -111,6 +111,14 @@ Default allowed domains:
 
 ## Verify Isolation
 
+Run all isolation verification checks at once:
+
+```bash
+./hermit test
+```
+
+Or run individual checks manually:
+
 ```bash
 # Should FAIL - no direct internet from claude-code container
 docker compose run --rm claude-code -c "curl -s --max-time 5 https://google.com"
@@ -122,7 +130,7 @@ docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://go
 docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://api.anthropic.com"
 
 # Check proxy logs
-docker compose logs tinyproxy
+./hermit logs
 ```
 
 ## Security Properties
