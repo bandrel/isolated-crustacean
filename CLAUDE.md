@@ -10,8 +10,8 @@ Isolated Crustaion runs Claude Code inside a network-isolated Docker container w
 
 Two Docker containers on two networks:
 
-- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet).
-- **tinyproxy** (alpine:3.21) - allowlist-filtering forward proxy. Connected to both `internal` and `external` networks, bridging internet access for approved domains only.
+- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Workspace is a named Docker volume at `/home/node/workspace`; `~/.claude` is bind-mounted from the host for persistent auth/config.
+- **tinyproxy** (alpine:3.21) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Only allows CONNECT on port 443. No TLS interception - it cannot read API keys or conversation content.
 
 The `internal` network is marked `internal: true` (no gateway). The `external` network is a standard bridge with internet access.
 
@@ -20,7 +20,7 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 - `docker-compose.yml` - service definitions, network topology, volume mounts
 - `claude-code/Dockerfile` - Claude Code container image (node:20-slim + git + claude-code CLI)
 - `tinyproxy/Dockerfile` - proxy container image (alpine + tinyproxy)
-- `tinyproxy/tinyproxy.conf` - proxy config (port 8888, ERE filter, default-deny)
+- `tinyproxy/tinyproxy.conf` - proxy config (port 8888, ERE filter, default-deny, ConnectPort 443 only)
 - `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line)
 
 ## Common Commands
@@ -50,4 +50,6 @@ docker compose logs tinyproxy
 
 ## Allowlist
 
-Edit `tinyproxy/allowlist` to add/remove domains. Each line is an anchored ERE regex. After changes, rebuild the tinyproxy image. The filter uses `FilterDefaultDeny Yes` so only explicitly matched domains are allowed.
+Edit `tinyproxy/allowlist` to add/remove domains. Each line is an anchored ERE regex (e.g., `^example\.com$` for exact match, `^(.+\.)?example\.com$` to include subdomains). After changes, rebuild with `docker compose build tinyproxy`. The filter uses `FilterDefaultDeny Yes` so only explicitly matched domains are allowed.
+
+Default allowed domains cover: Anthropic API/auth, statsig (feature flags), sentry (error reporting), npm registry, and GitHub.
