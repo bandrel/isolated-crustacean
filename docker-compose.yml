@@ -1,11 +1,6 @@
 services:
   claude-code:
-    build:
-      context: ./claude-code
-      args:
-        USERNAME: ${HOST_USER:-node}
-        USER_UID: ${HOST_UID:-1000}
-        USER_GID: ${HOST_GID:-1000}
+    build: ./claude-code
     stdin_open: true
     tty: true
     environment:
@@ -16,9 +11,9 @@ services:
     networks:
       - internal
     volumes:
-      - workspace:/home/${HOST_USER:-node}/workspace
-      - ${HOST_HOME:-.}/.claude:/home/${HOST_USER:-node}/.claude
-      - ${HOST_HOME:-.}/.claude.json:/home/${HOST_USER:-node}/.claude.json
+      - workspace:/home/node/workspace
+      - ${HOST_HOME:-.}/.claude:/mnt/host-claude:ro
+      - ${HOST_HOME:-.}/.claude.json:/mnt/host-claude.json:ro
     depends_on:
       - tinyproxy
 

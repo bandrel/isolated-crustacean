@@ -11,6 +11,7 @@ if [ -f /mnt/host-claude.json ]; then
     cp /mnt/host-claude.json "$HOME/.claude.json"
 fi
 
-source /usr/local/bin/banner.sh
+source /usr/local/bin/banner.sh &
+BANNER_PID=$!
 
 exec claude "$@"
