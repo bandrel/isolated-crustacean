@@ -74,14 +74,14 @@ claude --print "Explain this codebase"
 
 ### Copy files into the workspace
 
-The workspace is a Docker-managed named volume mounted at `/home/node/workspace`. To get files in:
+The workspace is a Docker-managed named volume mounted at `/home/<username>/workspace` (matching your host username). To get files in:
 
 ```bash
 # Find the container ID
 docker compose ps
 
 # Copy files in
-docker cp myfile.txt <container_id>:/home/node/workspace/
+docker cp myfile.txt <container_id>:/home/$(whoami)/workspace/
 ```
 
 Or use a bind mount instead by editing `docker-compose.yml`.

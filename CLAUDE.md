@@ -10,7 +10,7 @@ Isolated Crustacean runs Claude Code inside a network-isolated Docker container 
 
 Two Docker containers on two networks:
 
-- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Workspace is a named Docker volume at `/home/node/workspace`; `~/.claude` is bind-mounted from the host for persistent auth/config.
+- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Workspace is a named Docker volume at `/home/<username>/workspace`; `~/.claude` is bind-mounted from the host for persistent auth/config. The container user is dynamically created to match the host user's username, UID, and GID (via `hermit` exporting `HOST_USER`, `HOST_UID`, `HOST_GID`).
 - **tinyproxy** (alpine:3.21) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Only allows CONNECT on port 443. No TLS interception - it cannot read API keys or conversation content.
 
 The `internal` network is marked `internal: true` (no gateway). The `external` network is a standard bridge with internet access.
