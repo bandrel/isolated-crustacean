@@ -39,21 +39,3 @@ printf "\r%*s\r" "$COLS" ""
 
 # Show cursor again
 tput cnorm 2>/dev/null
-
-# Print static banner
-cat << 'BANNER'
-
-    +============================+
-    |  ////  ////  ////  ////    |
-    |============================|
-    |  _,,_         _,,_         |
-    | (o  o)  \./  (o  o)        |
-    |  \_/  --( )-- \_/          |
-    | /|||\ / | \ /|||\          |
-    |============================|
-    |  ////  ////  ////  ////    |
-    +============================+
-      ISOLATED CRUSTACEAN
-      Network-isolated Claude Code
-
-BANNER
