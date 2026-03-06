@@ -12,8 +12,8 @@ services:
       - internal
     volumes:
       - workspace:/home/node/workspace
-      - ${HOST_HOME:-.}/.claude:/mnt/host-claude:ro
-      - ${HOST_HOME:-.}/.claude.json:/mnt/host-claude.json:ro
+      - ${HOST_HOME:-.}/.claude:/home/node/.claude
+      - ${HOST_HOME:-.}/.claude.json:/home/node/.claude.json
     depends_on:
       - tinyproxy
 
