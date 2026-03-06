@@ -138,5 +138,6 @@ docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://ap
 - Claude Code has zero direct internet access (enforced at Docker network layer)
 - Tinyproxy cannot read API keys or conversation content (no TLS interception)
 - Docker socket is never mounted (prevents container escape)
-- OAuth credentials stored in a Docker volume, never on the host filesystem
+- Both `~/.claude/` and `~/.claude.json` are bind-mounted from the host (using absolute `HOST_HOME` path for cross-platform reliability)
+- Works on both macOS and Linux hosts
 - Allowlist uses anchored regex to prevent subdomain spoofing

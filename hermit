@@ -7,6 +7,9 @@ cd "$SCRIPT_DIR"
 export HOST_USER="$USER"
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
+export HOST_HOME="$HOME"
+
+touch "$HOME/.claude.json"
 
 usage() {
     cat <<EOF
