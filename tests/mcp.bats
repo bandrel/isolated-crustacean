@@ -138,3 +138,13 @@ teardown() {
     [[ "$output" == *"filesystem"* ]]
     [[ "$output" == *"enabled"* ]]
 }
+
+@test "mcp status runs without error" {
+    run "$HERMIT" mcp status
+    [ "$status" -eq 0 ]
+}
+
+@test "mcp restart runs without error when no servers enabled" {
+    run "$HERMIT" mcp restart
+    [ "$status" -eq 0 ]
+}

@@ -479,6 +479,28 @@ case "${1:-}" in
                     compose_cmd up -d
                 fi
                 ;;
+            status)
+                _has_enabled=false
+                for _f in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
+                    [[ -e "$_f" ]] && _has_enabled=true && break
+                done
+                if [[ "$_has_enabled" == false ]]; then
+                    echo "No MCP servers enabled"
+                    exit 0
+                fi
+                compose_cmd ps --filter "name=mcp-"
+                ;;
+            restart)
+                _has_enabled=false
+                for _f in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
+                    [[ -e "$_f" ]] && _has_enabled=true && break
+                done
+                if [[ "$_has_enabled" == false ]]; then
+                    echo "No MCP servers enabled"
+                    exit 0
+                fi
+                compose_cmd restart
+                ;;
             list)
                 printf "%-15s %-10s %s\n" "NAME" "STATUS" "DESCRIPTION"
                 for _tmpl in "$SCRIPT_DIR"/mcp/templates/*.yml; do
