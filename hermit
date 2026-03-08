@@ -13,13 +13,16 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
-  start       Start an interactive Claude Code session
+  start       Start an interactive Claude Code session (--mount <path>)
+  workspace   Manage named workspaces (list/create/switch/rm)
   build       Build all containers
   rebuild     Rebuild and restart (e.g. after allowlist changes)
-  logs        Show tinyproxy logs
+  logs        Show tinyproxy logs (--blocked: show only denied requests)
   test        Run isolation verification tests
   stop        Stop all running containers
   status      Show container status
+  exec <cmd>  Run a command in the Claude Code container
+  shell       Start interactive bash in the Claude Code container
   allowlist   Manage the tinyproxy domain allowlist
 
 Allowlist subcommands:
@@ -60,7 +63,21 @@ case "${1:-}" in
         docker compose up -d tinyproxy
         ;;
     logs)
-        docker compose logs tinyproxy "${@:2}"
+        shift
+        _blocked=false
+        _log_args=()
+        for _arg in "$@"; do
+            if [[ "$_arg" == "--blocked" ]]; then
+                _blocked=true
+            else
+                _log_args+=("$_arg")
+            fi
+        done
+        if [[ "$_blocked" == true ]]; then
+            docker compose logs "${_log_args[@]+"${_log_args[@]}"}" tinyproxy | grep -iE 'refused|denied|blocked'
+        else
+            docker compose logs "${_log_args[@]+"${_log_args[@]}"}" tinyproxy
+        fi
         ;;
     test)
         if ! command -v bats &>/dev/null; then
@@ -160,6 +177,17 @@ case "${1:-}" in
                 exit 1
                 ;;
         esac
+        ;;
+    exec)
+        if [[ $# -lt 2 ]]; then
+            echo "Error: 'exec' requires a command" >&2
+            echo "Usage: $(basename "$0") exec <command>" >&2
+            exit 1
+        fi
+        docker compose run --rm --no-deps -T --entrypoint bash claude-code -c "${*:2}"
+        ;;
+    shell)
+        docker compose run --rm --entrypoint bash claude-code
         ;;
     *)
         usage
