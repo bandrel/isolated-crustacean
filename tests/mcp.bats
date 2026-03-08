@@ -7,3 +7,8 @@ load test_helper
     [ "$status" -eq 0 ]
     [[ "$output" == *"name: ic-internal"* ]]
 }
+
+@test "hermit status works with no MCP servers enabled" {
+    run "$HERMIT" status
+    [ "$status" -eq 0 ]
+}

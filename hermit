@@ -8,6 +8,14 @@ export HOST_HOME="$HOME"
 
 touch "$HOME/.claude.json"
 
+compose_cmd() {
+    local -a files=(-f "$SCRIPT_DIR/docker-compose.yml")
+    for f in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
+        [[ -e "$f" ]] && files+=(-f "$f")
+    done
+    docker compose "${files[@]}" "$@"
+}
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") <command>
@@ -83,14 +91,14 @@ case "${1:-}" in
             _ws_name="$(cat "$SCRIPT_DIR/.hermit-workspace")"
             _run_args+=(-v "isolated-crustaion-${_ws_name}:/home/node/workspace")
         fi
-        docker compose run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
+        compose_cmd run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
         ;;
     build)
-        docker compose build
+        compose_cmd build
         ;;
     rebuild)
-        docker compose build
-        docker compose up -d tinyproxy
+        compose_cmd build
+        compose_cmd up -d tinyproxy
         ;;
     logs)
         shift
@@ -104,9 +112,9 @@ case "${1:-}" in
             fi
         done
         if [[ "$_blocked" == true ]]; then
-            docker compose logs "${_log_args[@]+"${_log_args[@]}"}" tinyproxy | grep -iE 'refused|denied|blocked' || echo "(no blocked requests found)"
+            compose_cmd logs "${_log_args[@]+"${_log_args[@]}"}" tinyproxy | grep -iE 'refused|denied|blocked' || echo "(no blocked requests found)"
         else
-            docker compose logs "${_log_args[@]+"${_log_args[@]}"}" tinyproxy
+            compose_cmd logs "${_log_args[@]+"${_log_args[@]}"}" tinyproxy
         fi
         ;;
     test)
@@ -114,14 +122,14 @@ case "${1:-}" in
             echo "Error: bats-core not found. Install with: brew install bats-core" >&2
             exit 1
         fi
-        docker compose up -d tinyproxy
+        compose_cmd up -d tinyproxy
         bats tests/
         ;;
     stop)
-        docker compose down
+        compose_cmd down
         ;;
     status)
-        docker compose ps
+        compose_cmd ps
         ;;
     allowlist)
         shift
@@ -275,17 +283,17 @@ case "${1:-}" in
             exit 1
         fi
         _cmd="$(printf '%q ' "${@:2}")"
-        docker compose run --rm --no-deps -T --entrypoint bash claude-code -c "$_cmd"
+        compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c "$_cmd"
         ;;
     shell)
-        docker compose run --rm --no-deps --entrypoint bash claude-code
+        compose_cmd run --rm --no-deps --entrypoint bash claude-code
         ;;
     doctor)
         _pass=0
         _fail=0
 
         printf "%-40s" "Checking proxy container..."
-        if docker compose ps tinyproxy 2>/dev/null | grep -q "running\|Up"; then
+        if compose_cmd ps tinyproxy 2>/dev/null | grep -q "running\|Up"; then
             echo "PASS"
             _pass=$((_pass + 1))
         else
@@ -294,7 +302,7 @@ case "${1:-}" in
         fi
 
         printf "%-40s" "Checking DNS resolution..."
-        if docker compose run --rm --no-deps -T --entrypoint bash claude-code -c "dig +short tinyproxy" 2>/dev/null | grep -q .; then
+        if compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c "dig +short tinyproxy" 2>/dev/null | grep -q .; then
             echo "PASS"
             _pass=$((_pass + 1))
         else
@@ -304,7 +312,7 @@ case "${1:-}" in
 
         printf "%-40s" "Checking allowed domain reachable..."
         _curl_fmt='%{http_code}'
-        _http_code="$(docker compose run --rm --no-deps -T --entrypoint bash claude-code -c \
+        _http_code="$(compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c \
             "curl -s -o /dev/null -w '$_curl_fmt' --max-time 10 https://api.anthropic.com" 2>/dev/null || echo "000")"
         if [[ "$_http_code" != "000" ]]; then
             echo "PASS (HTTP $_http_code)"
@@ -315,7 +323,7 @@ case "${1:-}" in
         fi
 
         printf "%-40s" "Checking blocked domain denied..."
-        _block_code="$(docker compose run --rm --no-deps -T --entrypoint bash claude-code -c \
+        _block_code="$(compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c \
             "curl -s -o /dev/null -w '$_curl_fmt' --max-time 10 https://google.com" 2>/dev/null || echo "000")"
         if [[ "$_block_code" == "403" ]] || [[ "$_block_code" == "000" ]]; then
             echo "PASS (HTTP $_block_code)"
