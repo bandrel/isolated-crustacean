@@ -24,6 +24,7 @@ Commands:
   exec <cmd>  Run a command in the Claude Code container
   shell       Start interactive bash in the Claude Code container
   allowlist   Manage the tinyproxy domain allowlist
+  doctor      Run health diagnostics (proxy, DNS, connectivity)
 
 Allowlist subcommands:
   allowlist [list]              List current allowlist entries with line numbers
@@ -32,6 +33,10 @@ Allowlist subcommands:
                                 Add subdomain-match pattern (base + all subdomains)
   allowlist remove <domain>     Remove all entries matching domain
   allowlist check <domain>      Exit 0 if domain matches allowlist, 1 if not
+  allowlist profile save <name>    Save current allowlist as a named profile
+  allowlist profile load <name>    Load a saved profile as the active allowlist
+  allowlist profile list           List saved profiles
+  allowlist profile rm <name>      Delete a saved profile
 EOF
 }
 
@@ -53,7 +58,32 @@ rebuild_reminder() {
 
 case "${1:-}" in
     start)
-        docker compose run --rm claude-code
+        shift || true
+        _mount_path=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --mount)
+                    _mount_path="$2"
+                    shift 2
+                    ;;
+                *)
+                    echo "Error: unknown option '$1'" >&2
+                    exit 1
+                    ;;
+            esac
+        done
+        _run_args=()
+        if [[ -n "$_mount_path" ]]; then
+            _abs_path="$(cd "$_mount_path" 2>/dev/null && pwd)" || {
+                echo "Error: path '$_mount_path' does not exist" >&2
+                exit 1
+            }
+            _run_args+=(-v "${_abs_path}:/home/node/workspace")
+        elif [[ -f "$SCRIPT_DIR/.hermit-workspace" ]]; then
+            _ws_name="$(cat "$SCRIPT_DIR/.hermit-workspace")"
+            _run_args+=(-v "isolated-crustaion-${_ws_name}:/home/node/workspace")
+        fi
+        docker compose run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
         ;;
     build)
         docker compose build
@@ -171,9 +201,69 @@ case "${1:-}" in
                 echo "NO MATCH: $_domain is not in allowlist"
                 exit 1
                 ;;
+            profile)
+                shift
+                _profiles_dir="$(dirname "$_allowlist_file")/profiles"
+                _prof_subcmd="${1:-list}"
+                case "$_prof_subcmd" in
+                    save)
+                        shift
+                        _prof_name="${1:-}"
+                        if [[ -z "$_prof_name" ]]; then
+                            echo "Error: 'allowlist profile save' requires a name" >&2
+                            exit 1
+                        fi
+                        mkdir -p "$_profiles_dir"
+                        cp "$_allowlist_file" "$_profiles_dir/$_prof_name"
+                        echo "Saved profile: $_prof_name"
+                        ;;
+                    load)
+                        shift
+                        _prof_name="${1:-}"
+                        if [[ -z "$_prof_name" ]]; then
+                            echo "Error: 'allowlist profile load' requires a name" >&2
+                            exit 1
+                        fi
+                        if [[ ! -f "$_profiles_dir/$_prof_name" ]]; then
+                            echo "Error: profile '$_prof_name' not found" >&2
+                            exit 1
+                        fi
+                        cp "$_profiles_dir/$_prof_name" "$_allowlist_file"
+                        echo "Loaded profile: $_prof_name"
+                        rebuild_reminder
+                        ;;
+                    list)
+                        mkdir -p "$_profiles_dir"
+                        if [[ -z "$(ls -A "$_profiles_dir" 2>/dev/null)" ]]; then
+                            echo "No saved profiles"
+                        else
+                            ls -1 "$_profiles_dir"
+                        fi
+                        ;;
+                    rm)
+                        shift
+                        _prof_name="${1:-}"
+                        if [[ -z "$_prof_name" ]]; then
+                            echo "Error: 'allowlist profile rm' requires a name" >&2
+                            exit 1
+                        fi
+                        if [[ ! -f "$_profiles_dir/$_prof_name" ]]; then
+                            echo "Error: profile '$_prof_name' not found" >&2
+                            exit 1
+                        fi
+                        rm "$_profiles_dir/$_prof_name"
+                        echo "Removed profile: $_prof_name"
+                        ;;
+                    *)
+                        echo "Error: unknown profile subcommand '$_prof_subcmd'" >&2
+                        echo "Usage: $(basename "$0") allowlist profile [save|load|list|rm] [name]" >&2
+                        exit 1
+                        ;;
+                esac
+                ;;
             *)
                 echo "Error: unknown allowlist subcommand '$_subcmd'" >&2
-                echo "Usage: $(basename "$0") allowlist [list|add|remove|check] [options]" >&2
+                echo "Usage: $(basename "$0") allowlist [list|add|remove|check|profile] [options]" >&2
                 exit 1
                 ;;
         esac
@@ -188,6 +278,123 @@ case "${1:-}" in
         ;;
     shell)
         docker compose run --rm --entrypoint bash claude-code
+        ;;
+    doctor)
+        _pass=0
+        _fail=0
+
+        printf "%-40s" "Checking proxy container..."
+        if docker compose ps tinyproxy 2>/dev/null | grep -q "running\|Up"; then
+            echo "PASS"
+            ((_pass++))
+        else
+            echo "FAIL (tinyproxy not running)"
+            ((_fail++))
+        fi
+
+        printf "%-40s" "Checking DNS resolution..."
+        if docker compose run --rm --no-deps -T --entrypoint bash claude-code -c "dig +short tinyproxy" 2>/dev/null | grep -q .; then
+            echo "PASS"
+            ((_pass++))
+        else
+            echo "FAIL (cannot resolve tinyproxy)"
+            ((_fail++))
+        fi
+
+        printf "%-40s" "Checking allowed domain reachable..."
+        _http_code="$(docker compose run --rm --no-deps -T --entrypoint bash claude-code -c \
+            "curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.anthropic.com" 2>/dev/null || echo "000")"
+        if [[ "$_http_code" != "000" ]]; then
+            echo "PASS (HTTP $_http_code)"
+            ((_pass++))
+        else
+            echo "FAIL (cannot reach api.anthropic.com)"
+            ((_fail++))
+        fi
+
+        printf "%-40s" "Checking blocked domain denied..."
+        if ! docker compose run --rm --no-deps -T --entrypoint bash claude-code -c \
+            "curl -s -o /dev/null --max-time 10 https://google.com" 2>/dev/null; then
+            echo "PASS"
+            ((_pass++))
+        else
+            echo "FAIL (google.com was not blocked)"
+            ((_fail++))
+        fi
+
+        echo ""
+        echo "Results: $_pass passed, $_fail failed"
+        if [[ "$_fail" -gt 0 ]]; then
+            exit 1
+        fi
+        ;;
+    workspace)
+        shift
+        _ws_subcmd="${1:-list}"
+        _vol_prefix="isolated-crustaion"
+        case "$_ws_subcmd" in
+            list)
+                docker volume ls --filter "name=${_vol_prefix}" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
+                ;;
+            create)
+                shift
+                _ws_name="${1:-}"
+                if [[ -z "$_ws_name" ]]; then
+                    echo "Error: 'workspace create' requires a name" >&2
+                    exit 1
+                fi
+                _full_name="${_vol_prefix}-${_ws_name}"
+                if docker volume inspect "$_full_name" &>/dev/null; then
+                    echo "Error: workspace '$_ws_name' already exists" >&2
+                    exit 1
+                fi
+                docker volume create "$_full_name"
+                echo "Created workspace: $_ws_name"
+                ;;
+            switch)
+                shift
+                _ws_name="${1:-}"
+                if [[ -z "$_ws_name" ]]; then
+                    echo "Error: 'workspace switch' requires a name" >&2
+                    exit 1
+                fi
+                _full_name="${_vol_prefix}-${_ws_name}"
+                if ! docker volume inspect "$_full_name" &>/dev/null; then
+                    echo "Error: workspace '$_ws_name' does not exist" >&2
+                    exit 1
+                fi
+                echo "$_ws_name" > "$SCRIPT_DIR/.hermit-workspace"
+                echo "Switched to workspace: $_ws_name"
+                ;;
+            rm)
+                shift
+                _ws_name="${1:-}"
+                if [[ -z "$_ws_name" ]]; then
+                    echo "Error: 'workspace rm' requires a name" >&2
+                    exit 1
+                fi
+                _full_name="${_vol_prefix}-${_ws_name}"
+                if ! docker volume inspect "$_full_name" &>/dev/null; then
+                    echo "Error: workspace '$_ws_name' does not exist" >&2
+                    exit 1
+                fi
+                read -rp "Remove workspace '$_ws_name'? [y/N] " _confirm
+                if [[ "$_confirm" =~ ^[Yy]$ ]]; then
+                    docker volume rm "$_full_name"
+                    echo "Removed workspace: $_ws_name"
+                    if [[ -f "$SCRIPT_DIR/.hermit-workspace" ]] && [[ "$(cat "$SCRIPT_DIR/.hermit-workspace")" == "$_ws_name" ]]; then
+                        rm -f "$SCRIPT_DIR/.hermit-workspace"
+                    fi
+                else
+                    echo "Cancelled"
+                fi
+                ;;
+            *)
+                echo "Error: unknown workspace subcommand '$_ws_subcmd'" >&2
+                echo "Usage: $(basename "$0") workspace [list|create|switch|rm] [name]" >&2
+                exit 1
+                ;;
+        esac
         ;;
     *)
         usage
