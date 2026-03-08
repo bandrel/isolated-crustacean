@@ -1,3 +1,5 @@
 .claude/
 .env
 .hermit-workspace
+mcp/enabled/*
+!mcp/enabled/.gitkeep
