@@ -2,6 +2,7 @@
 # Shared helpers for bats isolation tests
 
 COMPOSE_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ALLOWLIST_FILE="$COMPOSE_PROJECT_DIR/tinyproxy/allowlist"
 
 # Run a command inside the claude-code container with proxy env vars intact
 run_in_container() {

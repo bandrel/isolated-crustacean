@@ -20,6 +20,15 @@ Commands:
   test        Run isolation verification tests
   stop        Stop all running containers
   status      Show container status
+  allowlist   Manage the tinyproxy domain allowlist
+
+Allowlist subcommands:
+  allowlist [list]              List current allowlist entries with line numbers
+  allowlist add <domain>        Add exact-match pattern for domain
+  allowlist add --subdomains <domain>
+                                Add subdomain-match pattern (base + all subdomains)
+  allowlist remove <domain>     Remove all entries matching domain
+  allowlist check <domain>      Exit 0 if domain matches allowlist, 1 if not
 EOF
 }
 
@@ -50,6 +59,100 @@ case "${1:-}" in
         ;;
     status)
         docker compose ps
+        ;;
+    allowlist)
+        shift
+        # Parse optional --allowlist-file <path> flag
+        _allowlist_file="$SCRIPT_DIR/tinyproxy/allowlist"
+        _allowlist_args=()
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --allowlist-file)
+                    _allowlist_file="$2"
+                    shift 2
+                    ;;
+                *)
+                    _allowlist_args+=("$1")
+                    shift
+                    ;;
+            esac
+        done
+        set -- "${_allowlist_args[@]+"${_allowlist_args[@]}"}"
+
+        _subcmd="${1:-list}"
+        case "$_subcmd" in
+            list)
+                cat -n "$_allowlist_file"
+                ;;
+            add)
+                shift
+                _subdomains=false
+                if [[ "${1:-}" == "--subdomains" ]]; then
+                    _subdomains=true
+                    shift
+                fi
+                _domain="${1:-}"
+                if [[ -z "$_domain" ]]; then
+                    echo "Error: 'allowlist add' requires a domain argument" >&2
+                    exit 1
+                fi
+                _escaped="$(printf '%s' "$_domain" | sed 's/\./\\./g')"
+                if "$_subdomains"; then
+                    _pattern="^(.+\\.)?${_escaped}$"
+                else
+                    _pattern="^${_escaped}$"
+                fi
+                if grep -qF "$_pattern" "$_allowlist_file"; then
+                    echo "Warning: '$_pattern' already exists in allowlist (duplicate skipped)"
+                else
+                    echo "$_pattern" >>"$_allowlist_file"
+                    echo "Added: $_pattern"
+                    echo "Run ./hermit rebuild to apply changes"
+                fi
+                ;;
+            remove)
+                shift
+                _domain="${1:-}"
+                if [[ -z "$_domain" ]]; then
+                    echo "Error: 'allowlist remove' requires a domain argument" >&2
+                    exit 1
+                fi
+                _escaped="$(printf '%s' "$_domain" | sed 's/\./\\./g')"
+                _exact="^${_escaped}$"
+                _sub="^(.+\\.)?${_escaped}$"
+                if ! grep -qF "$_exact" "$_allowlist_file" && ! grep -qF "$_sub" "$_allowlist_file"; then
+                    echo "Error: no entry for '$_domain' found in allowlist" >&2
+                    exit 1
+                fi
+                _tmpfile="$(mktemp)"
+                grep -vF "$_exact" "$_allowlist_file" | grep -vF "$_sub" >"$_tmpfile"
+                mv "$_tmpfile" "$_allowlist_file"
+                echo "Removed entries for: $_domain"
+                echo "Run ./hermit rebuild to apply changes"
+                ;;
+            check)
+                shift
+                _domain="${1:-}"
+                if [[ -z "$_domain" ]]; then
+                    echo "Error: 'allowlist check' requires a domain argument" >&2
+                    exit 1
+                fi
+                while IFS= read -r _line || [[ -n "$_line" ]]; do
+                    [[ -z "$_line" ]] && continue
+                    if [[ "$_domain" =~ $_line ]]; then
+                        echo "MATCH: $_domain matches $_line"
+                        exit 0
+                    fi
+                done <"$_allowlist_file"
+                echo "NO MATCH: $_domain is not in allowlist"
+                exit 1
+                ;;
+            *)
+                echo "Error: unknown allowlist subcommand '$_subcmd'" >&2
+                echo "Usage: $(basename "$0") allowlist [list|add|remove|check] [options]" >&2
+                exit 1
+                ;;
+        esac
         ;;
     *)
         usage

@@ -88,11 +88,33 @@ Or use a bind mount instead by editing `docker-compose.yml`.
 
 ## Allowlist Customization
 
-Edit `tinyproxy/allowlist` to add or remove domains. Each line is an anchored ERE regex pattern. After editing, rebuild:
+Use `./hermit allowlist` to manage allowed domains without editing regex by hand:
+
+```bash
+# List current entries with line numbers
+./hermit allowlist list
+
+# Add a domain (exact match: ^example\.com$)
+./hermit allowlist add example.com
+
+# Add a domain plus all its subdomains (^(.+\.)?example\.com$)
+./hermit allowlist add --subdomains example.com
+
+# Remove all entries for a domain
+./hermit allowlist remove example.com
+
+# Check whether a domain would be allowed
+./hermit allowlist check api.anthropic.com   # exits 0 (allowed)
+./hermit allowlist check evil.com            # exits 1 (blocked)
+```
+
+After adding or removing entries, rebuild to apply the changes:
 
 ```bash
 ./hermit rebuild
 ```
+
+You can also edit `tinyproxy/allowlist` directly. Each line is an anchored ERE regex pattern.
 
 Default allowed domains:
 
