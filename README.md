@@ -55,8 +55,8 @@ This drops you into a bash shell inside the isolated container.
 Enable Claude with access to MCP (Model Context Protocol) servers running inside the isolated network:
 
 ```bash
-# List available server templates
-ls mcp/templates/
+# List available server templates and their status
+./hermit mcp list
 
 # Enable an MCP server
 ./hermit mcp add filesystem
@@ -144,8 +144,11 @@ claude --print "Explain this codebase"
 ./hermit workspace rm <name>             # Remove a workspace
 
 # MCP server management
+./hermit mcp list                        # List available servers and status
 ./hermit mcp add <server>                # Enable an MCP server from template
 ./hermit mcp rm <server>                 # Disable an MCP server
+./hermit mcp status                      # Show running MCP server containers
+./hermit mcp restart                     # Restart MCP server containers
 ```
 
 ### Bind-mount a host directory

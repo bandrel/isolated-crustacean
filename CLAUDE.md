@@ -53,8 +53,11 @@ Use the `hermit` wrapper script for all operations:
 ./hermit workspace rm myproject
 
 # MCP server management
+./hermit mcp list
 ./hermit mcp add filesystem
 ./hermit mcp rm filesystem
+./hermit mcp status
+./hermit mcp restart
 
 # Full rebuild (after allowlist changes, etc.)
 ./hermit rebuild
