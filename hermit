@@ -450,6 +450,35 @@ case "${1:-}" in
                     compose_cmd up -d
                 fi
                 ;;
+            rm)
+                shift
+                _mcp_name="${1:-}"
+                if [[ -z "$_mcp_name" ]]; then
+                    echo "Error: 'mcp rm' requires a server name" >&2
+                    exit 1
+                fi
+                _enabled="$SCRIPT_DIR/mcp/enabled/${_mcp_name}.yml"
+                if [[ ! -f "$_enabled" ]]; then
+                    echo "Error: MCP server '$_mcp_name' is not enabled" >&2
+                    exit 1
+                fi
+                rm "$_enabled"
+                _al_pattern="^mcp-${_mcp_name}$"
+                _tmpfile="$(mktemp)"
+                grep -vF "$_al_pattern" "$SCRIPT_DIR/tinyproxy/allowlist" > "$_tmpfile" || true
+                mv "$_tmpfile" "$SCRIPT_DIR/tinyproxy/allowlist"
+                _claude_json="$HOME/.claude.json"
+                if [[ -s "$_claude_json" ]]; then
+                    _tmp_json="$(mktemp)"
+                    jq --arg name "$_mcp_name" 'del(.mcpServers[$name])' "$_claude_json" > "$_tmp_json"
+                    mv "$_tmp_json" "$_claude_json"
+                fi
+                echo "Disabled MCP server: $_mcp_name"
+                if [[ "${HERMIT_NO_REBUILD:-}" != "1" ]]; then
+                    compose_cmd build
+                    compose_cmd up -d
+                fi
+                ;;
             *)
                 echo "Error: unknown mcp subcommand '$_mcp_subcmd'" >&2
                 exit 1

@@ -95,3 +95,31 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"already enabled"* ]]
 }
+
+@test "mcp rm removes enabled file" {
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    HERMIT_NO_REBUILD=1 run "$HERMIT" mcp rm filesystem
+    [ "$status" -eq 0 ]
+    [ ! -f "$COMPOSE_PROJECT_DIR/mcp/enabled/filesystem.yml" ]
+}
+
+@test "mcp rm removes allowlist entry" {
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    HERMIT_NO_REBUILD=1 run "$HERMIT" mcp rm filesystem
+    [ "$status" -eq 0 ]
+    ! grep -q '^\^mcp-filesystem\$$' "$ALLOWLIST_FILE"
+}
+
+@test "mcp rm removes claude.json entry" {
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    HERMIT_NO_REBUILD=1 run "$HERMIT" mcp rm filesystem
+    [ "$status" -eq 0 ]
+    run jq -r '.mcpServers.filesystem // "null"' "$HOME/.claude.json"
+    [ "$output" = "null" ]
+}
+
+@test "mcp rm fails for non-enabled server" {
+    run "$HERMIT" mcp rm filesystem
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not enabled"* ]]
+}
