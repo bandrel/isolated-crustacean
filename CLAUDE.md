@@ -35,15 +35,34 @@ Use the `hermit` wrapper script for all operations:
 # Start interactive session
 ./hermit start
 
+# Start with a host directory mounted
+./hermit start --mount /path/to/project
+
+# Run a command in the container
+./hermit exec echo hello
+
+# Drop into interactive bash
+./hermit shell
+
+# Workspace management (named Docker volumes)
+./hermit workspace list
+./hermit workspace create myproject
+./hermit workspace switch myproject
+./hermit workspace rm myproject
+
 # Full rebuild (after allowlist changes, etc.)
 ./hermit rebuild
+
+# Health diagnostics
+./hermit doctor
 
 # Run all isolation verification tests
 ./hermit test
 
-# Show tinyproxy logs (add -f to follow)
+# Show tinyproxy logs (add -f to follow, --blocked for denied only)
 ./hermit logs
 ./hermit logs -f
+./hermit logs --blocked
 
 # Stop all containers
 ./hermit stop
@@ -68,3 +87,12 @@ docker compose down
 Edit `tinyproxy/allowlist` to add/remove domains. Each line is an anchored ERE regex (e.g., `^example\.com$` for exact match, `^(.+\.)?example\.com$` to include subdomains). After changes, rebuild with `./hermit rebuild`. The filter uses `FilterDefaultDeny Yes` so only explicitly matched domains are allowed.
 
 Default allowed domains cover: Anthropic API/auth, statsig (feature flags), sentry (error reporting), npm registry, and GitHub.
+
+Allowlist profiles let you save/load named configurations:
+
+```bash
+./hermit allowlist profile save <name>
+./hermit allowlist profile load <name>
+./hermit allowlist profile list
+./hermit allowlist profile rm <name>
+```

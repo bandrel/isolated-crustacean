@@ -72,6 +72,42 @@ Or run a one-off command:
 claude --print "Explain this codebase"
 ```
 
+### Run commands in the container
+
+```bash
+# Run a one-off command
+./hermit exec echo hello
+
+# Drop into an interactive bash shell
+./hermit shell
+```
+
+### Bind-mount a host directory
+
+```bash
+./hermit start --mount /path/to/project
+```
+
+This mounts the host directory at `/home/node/workspace` inside the container instead of using the default Docker volume.
+
+### Workspace management
+
+Named workspaces are Docker volumes that persist between sessions:
+
+```bash
+# List workspaces
+./hermit workspace list
+
+# Create a new workspace
+./hermit workspace create myproject
+
+# Switch active workspace (used by hermit start)
+./hermit workspace switch myproject
+
+# Remove a workspace
+./hermit workspace rm myproject
+```
+
 ### Copy files into the workspace
 
 The workspace is a Docker-managed named volume mounted at `/home/<username>/workspace` (matching your host username). To get files in:
@@ -83,8 +119,6 @@ docker compose ps
 # Copy files in
 docker cp myfile.txt <container_id>:/home/$(whoami)/workspace/
 ```
-
-Or use a bind mount instead by editing `docker-compose.yml`.
 
 ## Allowlist Customization
 
@@ -114,6 +148,24 @@ After adding or removing entries, rebuild to apply the changes:
 ./hermit rebuild
 ```
 
+### Allowlist profiles
+
+Save and load named allowlist configurations:
+
+```bash
+# Save current allowlist as a profile
+./hermit allowlist profile save strict
+
+# List saved profiles
+./hermit allowlist profile list
+
+# Load a saved profile
+./hermit allowlist profile load strict
+
+# Delete a profile
+./hermit allowlist profile rm strict
+```
+
 You can also edit `tinyproxy/allowlist` directly. Each line is an anchored ERE regex pattern.
 
 Default allowed domains:
@@ -130,6 +182,27 @@ Default allowed domains:
 | `registry.npmjs.org` | npm packages |
 | `github.com`, `*.github.com` | Git operations |
 | `*.githubusercontent.com` | GitHub raw content |
+
+## Health Check
+
+Run diagnostics to verify proxy, DNS, and connectivity:
+
+```bash
+./hermit doctor
+```
+
+## Logs
+
+```bash
+# Show all tinyproxy logs
+./hermit logs
+
+# Follow logs
+./hermit logs -f
+
+# Show only denied/blocked requests
+./hermit logs --blocked
+```
 
 ## Verify Isolation
 
