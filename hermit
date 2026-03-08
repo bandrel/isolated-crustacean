@@ -33,6 +33,14 @@ Commands:
   shell       Start interactive bash in the Claude Code container
   allowlist   Manage the tinyproxy domain allowlist
   doctor      Run health diagnostics (proxy, DNS, connectivity)
+  mcp         Manage MCP servers (list/add/rm/status/restart)
+
+MCP subcommands:
+  mcp list                    List available MCP servers and their status
+  mcp add <name>              Enable an MCP server (auto-rebuilds)
+  mcp rm <name>               Disable an MCP server (auto-rebuilds)
+  mcp status                  Show running MCP server containers
+  mcp restart                 Restart MCP server containers
 
 Allowlist subcommands:
   allowlist [list]              List current allowlist entries with line numbers
@@ -514,6 +522,18 @@ case "${1:-}" in
                     fi
                     printf "%-15s %-10s %s\n" "$_name" "$_status" "$_desc"
                 done
+                ;;
+            ""|help)
+                cat <<MCPEOF
+Usage: $(basename "$0") mcp <subcommand>
+
+Subcommands:
+  list                    List available MCP servers and their status
+  add <name>              Enable an MCP server (auto-rebuilds)
+  rm <name>               Disable an MCP server (auto-rebuilds)
+  status                  Show running MCP server containers
+  restart                 Restart MCP server containers
+MCPEOF
                 ;;
             *)
                 echo "Error: unknown mcp subcommand '$_mcp_subcmd'" >&2
