@@ -25,9 +25,12 @@ services:
 
 networks:
   internal:
+    name: ic-internal
     internal: true
   external:
+    name: ic-external
     driver: bridge
 
 volumes:
   workspace:
+    name: ic-workspace
