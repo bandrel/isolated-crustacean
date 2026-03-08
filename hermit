@@ -407,6 +407,55 @@ case "${1:-}" in
                 ;;
         esac
         ;;
+    mcp)
+        shift
+        _mcp_subcmd="${1:-}"
+        case "$_mcp_subcmd" in
+            add)
+                shift
+                _mcp_name="${1:-}"
+                if [[ -z "$_mcp_name" ]]; then
+                    echo "Error: 'mcp add' requires a server name" >&2
+                    exit 1
+                fi
+                _tmpl="$SCRIPT_DIR/mcp/templates/${_mcp_name}.yml"
+                if [[ ! -f "$_tmpl" ]]; then
+                    echo "Error: template '$_mcp_name' not found in mcp/templates/" >&2
+                    exit 1
+                fi
+                _enabled="$SCRIPT_DIR/mcp/enabled/${_mcp_name}.yml"
+                if [[ -f "$_enabled" ]]; then
+                    echo "MCP server '$_mcp_name' is already enabled"
+                    exit 0
+                fi
+                _mcp_port=$(grep '  port:' "$_tmpl" | head -1 | awk '{print $2}')
+                _mcp_path=$(grep '  path:' "$_tmpl" | head -1 | awk '{print $2}')
+                _mcp_url="http://mcp-${_mcp_name}:${_mcp_port}${_mcp_path}"
+                cp "$_tmpl" "$_enabled"
+                _al_pattern="^mcp-${_mcp_name}$"
+                if ! grep -qF "$_al_pattern" "$SCRIPT_DIR/tinyproxy/allowlist"; then
+                    echo "$_al_pattern" >> "$SCRIPT_DIR/tinyproxy/allowlist"
+                fi
+                _claude_json="$HOME/.claude.json"
+                if [[ ! -s "$_claude_json" ]]; then
+                    echo '{}' > "$_claude_json"
+                fi
+                _tmp_json="$(mktemp)"
+                jq --arg name "$_mcp_name" --arg url "$_mcp_url" \
+                    '.mcpServers[$name] = {"url": $url}' "$_claude_json" > "$_tmp_json"
+                mv "$_tmp_json" "$_claude_json"
+                echo "Enabled MCP server: $_mcp_name ($_mcp_url)"
+                if [[ "${HERMIT_NO_REBUILD:-}" != "1" ]]; then
+                    compose_cmd build
+                    compose_cmd up -d
+                fi
+                ;;
+            *)
+                echo "Error: unknown mcp subcommand '$_mcp_subcmd'" >&2
+                exit 1
+                ;;
+        esac
+        ;;
     *)
         usage
         exit 1
