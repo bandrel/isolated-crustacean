@@ -1,0 +1,24 @@
+x-mcp:
+  name: fetch
+  description: "HTTP fetch - requests route through tinyproxy"
+  transport: streamable-http
+  port: 3003
+  path: /mcp
+
+services:
+  mcp-fetch:
+    image: mcp/fetch-server:latest
+    networks:
+      - internal
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_PORT: "3003"
+      HTTP_PROXY: http://tinyproxy:8888
+      HTTPS_PROXY: http://tinyproxy:8888
+    expose:
+      - "3003"
+
+networks:
+  internal:
+    name: ic-internal
+    external: true

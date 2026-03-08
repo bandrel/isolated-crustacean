@@ -1,0 +1,29 @@
+x-mcp:
+  name: git
+  description: "Local git operations on the workspace"
+  transport: streamable-http
+  port: 3002
+  path: /mcp
+
+services:
+  mcp-git:
+    image: mcp/git-server:latest
+    networks:
+      - internal
+    volumes:
+      - workspace:/data
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_PORT: "3002"
+    expose:
+      - "3002"
+
+networks:
+  internal:
+    name: ic-internal
+    external: true
+
+volumes:
+  workspace:
+    name: ic-workspace
+    external: true

@@ -1,0 +1,23 @@
+x-mcp:
+  name: github
+  description: "GitHub API access (repos, issues, PRs)"
+  transport: streamable-http
+  port: 3001
+  path: /mcp
+
+services:
+  mcp-github:
+    image: mcp/github-server:latest
+    networks:
+      - internal
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_PORT: "3001"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+    expose:
+      - "3001"
+
+networks:
+  internal:
+    name: ic-internal
+    external: true

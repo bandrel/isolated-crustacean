@@ -1,0 +1,29 @@
+x-mcp:
+  name: sqlite
+  description: "SQLite database access on the workspace volume"
+  transport: streamable-http
+  port: 3005
+  path: /mcp
+
+services:
+  mcp-sqlite:
+    image: mcp/sqlite-server:latest
+    networks:
+      - internal
+    volumes:
+      - workspace:/data
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_PORT: "3005"
+    expose:
+      - "3005"
+
+networks:
+  internal:
+    name: ic-internal
+    external: true
+
+volumes:
+  workspace:
+    name: ic-workspace
+    external: true

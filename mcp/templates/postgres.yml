@@ -1,0 +1,23 @@
+x-mcp:
+  name: postgres
+  description: "PostgreSQL database access"
+  transport: streamable-http
+  port: 3004
+  path: /mcp
+
+services:
+  mcp-postgres:
+    image: mcp/postgres-server:latest
+    networks:
+      - internal
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_PORT: "3004"
+      POSTGRES_CONNECTION_STRING: "${POSTGRES_CONNECTION_STRING:-}"
+    expose:
+      - "3004"
+
+networks:
+  internal:
+    name: ic-internal
+    external: true

@@ -1,0 +1,29 @@
+x-mcp:
+  name: filesystem
+  description: "Read/write access to the shared workspace volume"
+  transport: streamable-http
+  port: 3000
+  path: /mcp
+
+services:
+  mcp-filesystem:
+    image: mcp/filesystem-server:latest
+    networks:
+      - internal
+    volumes:
+      - workspace:/data
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_PORT: "3000"
+    expose:
+      - "3000"
+
+networks:
+  internal:
+    name: ic-internal
+    external: true
+
+volumes:
+  workspace:
+    name: ic-workspace
+    external: true
