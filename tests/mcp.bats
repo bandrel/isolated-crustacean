@@ -123,3 +123,18 @@ teardown() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"not enabled"* ]]
 }
+
+@test "mcp list shows available templates" {
+    run "$HERMIT" mcp list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"filesystem"* ]]
+    [[ "$output" == *"github"* ]]
+}
+
+@test "mcp list shows enabled status" {
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    run "$HERMIT" mcp list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"filesystem"* ]]
+    [[ "$output" == *"enabled"* ]]
+}

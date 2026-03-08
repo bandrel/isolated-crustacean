@@ -479,6 +479,20 @@ case "${1:-}" in
                     compose_cmd up -d
                 fi
                 ;;
+            list)
+                printf "%-15s %-10s %s\n" "NAME" "STATUS" "DESCRIPTION"
+                for _tmpl in "$SCRIPT_DIR"/mcp/templates/*.yml; do
+                    [[ -e "$_tmpl" ]] || continue
+                    _name=$(grep '  name:' "$_tmpl" | head -1 | awk '{print $2}')
+                    _desc=$(grep '  description:' "$_tmpl" | head -1 | sed 's/.*description: *"//;s/"$//')
+                    if [[ -f "$SCRIPT_DIR/mcp/enabled/${_name}.yml" ]]; then
+                        _status="enabled"
+                    else
+                        _status="disabled"
+                    fi
+                    printf "%-15s %-10s %s\n" "$_name" "$_status" "$_desc"
+                done
+                ;;
             *)
                 echo "Error: unknown mcp subcommand '$_mcp_subcmd'" >&2
                 exit 1
