@@ -23,6 +23,8 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 - `tinyproxy/Dockerfile` - proxy container image (alpine + tinyproxy)
 - `tinyproxy/tinyproxy.conf` - proxy config (port 8888, ERE filter, default-deny, ConnectPort 443 only)
 - `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line)
+- `mcp/templates/` - MCP server compose templates (filesystem.yml, etc.)
+- `mcp/enabled/` - enabled MCP server overrides (dynamically loaded by compose_cmd helper)
 
 ## Common Commands
 
@@ -49,6 +51,10 @@ Use the `hermit` wrapper script for all operations:
 ./hermit workspace create myproject
 ./hermit workspace switch myproject
 ./hermit workspace rm myproject
+
+# MCP server management
+./hermit mcp add filesystem
+./hermit mcp rm filesystem
 
 # Full rebuild (after allowlist changes, etc.)
 ./hermit rebuild
@@ -96,3 +102,24 @@ Allowlist profiles let you save/load named configurations:
 ./hermit allowlist profile list
 ./hermit allowlist profile rm <name>
 ```
+
+## MCP Server Support
+
+MCP (Model Context Protocol) servers can run inside the isolated network and be accessed by Claude Code.
+
+Templates are stored in `mcp/templates/` (e.g., `filesystem.yml`). Each template defines:
+- Service configuration (image, ports, volumes)
+- Network and volume references (ic-internal, ic-workspace)
+- Metadata in `x-mcp` section (name, description, transport, port, path)
+
+When you run `./hermit mcp add <server>`:
+1. Hermit copies the template from `mcp/templates/<server>.yml` to `mcp/enabled/<server>.yml`
+2. The enabled file is dynamically included in docker compose (via compose_cmd helper)
+3. Server's internal hostname (`mcp-<server>`) is added to the proxy allowlist
+4. Server is registered in `~/.claude.json` under `mcpServers`
+
+To add a new MCP server template:
+1. Create `mcp/templates/<name>.yml` with the compose service definition
+2. Include required `x-mcp` metadata
+3. Reference the `ic-internal` network (external: true) and `ic-workspace` volume (external: true)
+4. Users can then enable it with `./hermit mcp add <name>`

@@ -50,6 +50,30 @@ Run Claude Code inside a network-isolated Docker container where all internet tr
 
 This drops you into a bash shell inside the isolated container.
 
+### MCP Server Support
+
+Enable Claude with access to MCP (Model Context Protocol) servers running inside the isolated network:
+
+```bash
+# List available server templates
+ls mcp/templates/
+
+# Enable an MCP server
+./hermit mcp add filesystem
+
+# Disable an MCP server
+./hermit mcp rm filesystem
+```
+
+When you add a server, hermit automatically:
+- Copies the server template to `mcp/enabled/`
+- Adds the server's internal hostname to the proxy allowlist
+- Configures the server in `~/.claude.json` under `mcpServers`
+
+Available MCP server templates (see `mcp/templates/` for full list):
+
+- `filesystem` - read/write access to the shared workspace volume
+
 ### First run - log in
 
 On first use (or when credentials expire), authenticate with OAuth:
@@ -82,6 +106,48 @@ claude --print "Explain this codebase"
 ./hermit shell
 ```
 
+### Hermit commands reference
+
+```bash
+# Environment and containers
+./hermit build       # Build all containers
+./hermit rebuild     # Rebuild and restart (e.g. after allowlist changes)
+./hermit start       # Start interactive Claude Code session (--mount <path>)
+./hermit stop        # Stop all running containers
+./hermit status      # Show container status
+./hermit exec <cmd>  # Run a command in the Claude Code container
+./hermit shell       # Start interactive bash in the Claude Code container
+
+# Diagnostics
+./hermit logs        # Show tinyproxy logs (--blocked: show only denied requests)
+./hermit logs -f     # Follow logs in real-time
+./hermit doctor      # Run health diagnostics (proxy, DNS, connectivity)
+./hermit test        # Run isolation verification tests
+
+# Allowlist management
+./hermit allowlist list                  # List current allowlist entries
+./hermit allowlist add example.com       # Add exact-match domain
+./hermit allowlist add --subdomains example.com  # Add domain plus subdomains
+./hermit allowlist remove example.com    # Remove domain entries
+./hermit allowlist check example.com     # Check if domain would be allowed
+
+# Allowlist profiles
+./hermit allowlist profile save <name>   # Save current allowlist as profile
+./hermit allowlist profile load <name>   # Load a saved profile
+./hermit allowlist profile list          # List saved profiles
+./hermit allowlist profile rm <name>     # Delete a profile
+
+# Workspace management
+./hermit workspace list                  # List all workspaces
+./hermit workspace create <name>         # Create a new workspace
+./hermit workspace switch <name>         # Switch active workspace
+./hermit workspace rm <name>             # Remove a workspace
+
+# MCP server management
+./hermit mcp add <server>                # Enable an MCP server from template
+./hermit mcp rm <server>                 # Disable an MCP server
+```
+
 ### Bind-mount a host directory
 
 ```bash
@@ -89,24 +155,6 @@ claude --print "Explain this codebase"
 ```
 
 This mounts the host directory at `/home/node/workspace` inside the container instead of using the default Docker volume.
-
-### Workspace management
-
-Named workspaces are Docker volumes that persist between sessions:
-
-```bash
-# List workspaces
-./hermit workspace list
-
-# Create a new workspace
-./hermit workspace create myproject
-
-# Switch active workspace (used by hermit start)
-./hermit workspace switch myproject
-
-# Remove a workspace
-./hermit workspace rm myproject
-```
 
 ### Copy files into the workspace
 
