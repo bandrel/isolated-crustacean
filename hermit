@@ -341,6 +341,30 @@ case "${1:-}" in
             _fail=$((_fail + 1))
         fi
 
+        for _enabled in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
+            [[ -e "$_enabled" ]] || continue
+            _mcp_name=$(grep '  name:' "$_enabled" | head -1 | awk '{print $2}')
+            _al_pattern="^mcp-${_mcp_name}$"
+
+            printf "%-40s" "MCP allowlist: mcp-${_mcp_name}..."
+            if grep -qF "$_al_pattern" "$SCRIPT_DIR/tinyproxy/allowlist"; then
+                echo "PASS"
+                _pass=$((_pass + 1))
+            else
+                echo "FAIL (missing allowlist entry)"
+                _fail=$((_fail + 1))
+            fi
+
+            printf "%-40s" "MCP config: ${_mcp_name}..."
+            if jq -e ".mcpServers.${_mcp_name}" "$HOME/.claude.json" &>/dev/null; then
+                echo "PASS"
+                _pass=$((_pass + 1))
+            else
+                echo "FAIL (missing from .claude.json)"
+                _fail=$((_fail + 1))
+            fi
+        done
+
         echo ""
         echo "Results: $_pass passed, $_fail failed"
         if [[ "$_fail" -gt 0 ]]; then

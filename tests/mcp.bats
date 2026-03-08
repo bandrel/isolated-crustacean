@@ -148,3 +148,13 @@ teardown() {
     run "$HERMIT" mcp restart
     [ "$status" -eq 0 ]
 }
+
+@test "doctor checks MCP allowlist consistency" {
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    # Remove allowlist entry manually to create inconsistency
+    _tmpfile="$(mktemp)"
+    grep -v 'mcp-filesystem' "$ALLOWLIST_FILE" > "$_tmpfile" || true
+    mv "$_tmpfile" "$ALLOWLIST_FILE"
+    run "$HERMIT" doctor
+    [[ "$output" == *"FAIL"*"mcp-filesystem"* ]]
+}
