@@ -2,15 +2,16 @@
 
 load test_helper
 
-_test_vol_prefix="isolated-crustaion-test"
+_test_vol_prefix="hermittest"
 
 setup() {
     _test_name="${_test_vol_prefix}-$$-${BATS_TEST_NUMBER}"
 }
 
 teardown() {
-    # Clean up any test volumes
-    docker volume ls --filter "name=${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
+    # Clean up any test volumes (hermit prepends "isolated-crustaion-")
+    docker volume ls --filter "name=isolated-crustaion-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
+    rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
 }
 
 @test "workspace list runs without error" {
@@ -21,7 +22,8 @@ teardown() {
 @test "workspace create makes a new volume" {
     run "$HERMIT" workspace create "$_test_name"
     [ "$status" -eq 0 ]
-    docker volume inspect "isolated-crustaion-${_test_name}" &>/dev/null
+    run docker volume inspect "isolated-crustaion-${_test_name}"
+    [ "$status" -eq 0 ]
 }
 
 @test "workspace create duplicate exits non-zero" {
@@ -35,7 +37,6 @@ teardown() {
     run "$HERMIT" workspace switch "$_test_name"
     [ "$status" -eq 0 ]
     [ "$(cat "$COMPOSE_PROJECT_DIR/.hermit-workspace")" = "$_test_name" ]
-    rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
 }
 
 @test "workspace switch to nonexistent volume exits non-zero" {
@@ -47,7 +48,8 @@ teardown() {
     "$HERMIT" workspace create "$_test_name"
     run bash -c "echo y | '$HERMIT' workspace rm '$_test_name'"
     [ "$status" -eq 0 ]
-    ! docker volume inspect "isolated-crustaion-${_test_name}" &>/dev/null
+    run docker volume inspect "isolated-crustaion-${_test_name}"
+    [ "$status" -ne 0 ]
 }
 
 @test "workspace rm nonexistent exits non-zero" {
