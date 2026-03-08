@@ -158,3 +158,15 @@ teardown() {
     run "$HERMIT" doctor
     [[ "$output" == *"FAIL"*"mcp-filesystem"* ]]
 }
+
+@test "enabled MCP server is reachable through proxy" {
+    skip "requires MCP server images to be available"
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    compose_cmd build
+    compose_cmd up -d
+    sleep 3
+    run run_in_container "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://mcp-filesystem:3000/mcp"
+    [ "$status" -eq 0 ]
+    [[ "$output" != "000" ]]
+    compose_cmd down
+}
