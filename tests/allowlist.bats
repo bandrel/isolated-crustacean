@@ -82,3 +82,54 @@ teardown() {
     [ "$status" -ne 0 ]
     [ -n "$output" ]
 }
+
+# --- Profile tests ---
+
+hermit_allowlist_profile() {
+    "$HERMIT" allowlist --allowlist-file "$TMPFILE" profile "$@"
+}
+
+_profiles_dir() {
+    echo "$(dirname "$TMPFILE")/profiles"
+}
+
+@test "allowlist profile save creates a profile" {
+    run hermit_allowlist_profile save test-profile
+    [ "$status" -eq 0 ]
+    [ -f "$(_profiles_dir)/test-profile" ]
+    rm -rf "$(_profiles_dir)"
+}
+
+@test "allowlist profile load restores a profile" {
+    hermit_allowlist_profile save test-profile
+    echo "^extra\.com$" >> "$TMPFILE"
+    hermit_allowlist_profile load test-profile
+    ! grep -q "extra" "$TMPFILE"
+    rm -rf "$(_profiles_dir)"
+}
+
+@test "allowlist profile list shows saved profiles" {
+    hermit_allowlist_profile save test-profile
+    run hermit_allowlist_profile list
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"test-profile"* ]]
+    rm -rf "$(_profiles_dir)"
+}
+
+@test "allowlist profile rm deletes a profile" {
+    hermit_allowlist_profile save test-profile
+    run hermit_allowlist_profile rm test-profile
+    [ "$status" -eq 0 ]
+    [ ! -f "$(_profiles_dir)/test-profile" ]
+    rm -rf "$(_profiles_dir)"
+}
+
+@test "allowlist profile load nonexistent exits non-zero" {
+    run hermit_allowlist_profile load nonexistent
+    [ "$status" -ne 0 ]
+}
+
+@test "allowlist profile rm nonexistent exits non-zero" {
+    run hermit_allowlist_profile rm nonexistent
+    [ "$status" -ne 0 ]
+}

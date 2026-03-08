@@ -286,19 +286,19 @@ case "${1:-}" in
         printf "%-40s" "Checking proxy container..."
         if docker compose ps tinyproxy 2>/dev/null | grep -q "running\|Up"; then
             echo "PASS"
-            ((_pass++))
+            _pass=$((_pass + 1))
         else
             echo "FAIL (tinyproxy not running)"
-            ((_fail++))
+            _fail=$((_fail + 1))
         fi
 
         printf "%-40s" "Checking DNS resolution..."
         if docker compose run --rm --no-deps -T --entrypoint bash claude-code -c "dig +short tinyproxy" 2>/dev/null | grep -q .; then
             echo "PASS"
-            ((_pass++))
+            _pass=$((_pass + 1))
         else
             echo "FAIL (cannot resolve tinyproxy)"
-            ((_fail++))
+            _fail=$((_fail + 1))
         fi
 
         printf "%-40s" "Checking allowed domain reachable..."
@@ -306,20 +306,20 @@ case "${1:-}" in
             "curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.anthropic.com" 2>/dev/null || echo "000")"
         if [[ "$_http_code" != "000" ]]; then
             echo "PASS (HTTP $_http_code)"
-            ((_pass++))
+            _pass=$((_pass + 1))
         else
             echo "FAIL (cannot reach api.anthropic.com)"
-            ((_fail++))
+            _fail=$((_fail + 1))
         fi
 
         printf "%-40s" "Checking blocked domain denied..."
         if ! docker compose run --rm --no-deps -T --entrypoint bash claude-code -c \
             "curl -s -o /dev/null --max-time 10 https://google.com" 2>/dev/null; then
             echo "PASS"
-            ((_pass++))
+            _pass=$((_pass + 1))
         else
             echo "FAIL (google.com was not blocked)"
-            ((_fail++))
+            _fail=$((_fail + 1))
         fi
 
         echo ""
