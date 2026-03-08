@@ -3,6 +3,7 @@
 
 COMPOSE_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALLOWLIST_FILE="$COMPOSE_PROJECT_DIR/tinyproxy/allowlist"
+HERMIT="$COMPOSE_PROJECT_DIR/hermit"
 
 # Run a command inside the claude-code container with proxy env vars intact
 run_in_container() {

@@ -32,6 +32,22 @@ Allowlist subcommands:
 EOF
 }
 
+escape_domain() {
+    printf '%s' "$1" | sed 's/\./\\./g'
+}
+
+require_domain() {
+    local subcmd="$1" domain="$2"
+    if [[ -z "$domain" ]]; then
+        echo "Error: 'allowlist $subcmd' requires a domain argument" >&2
+        exit 1
+    fi
+}
+
+rebuild_reminder() {
+    echo "Run ./hermit rebuild to apply changes"
+}
+
 case "${1:-}" in
     start)
         docker compose run --rm claude-code
@@ -92,12 +108,9 @@ case "${1:-}" in
                     shift
                 fi
                 _domain="${1:-}"
-                if [[ -z "$_domain" ]]; then
-                    echo "Error: 'allowlist add' requires a domain argument" >&2
-                    exit 1
-                fi
-                _escaped="$(printf '%s' "$_domain" | sed 's/\./\\./g')"
-                if "$_subdomains"; then
+                require_domain add "$_domain"
+                _escaped="$(escape_domain "$_domain")"
+                if [[ "$_subdomains" == true ]]; then
                     _pattern="^(.+\\.)?${_escaped}$"
                 else
                     _pattern="^${_escaped}$"
@@ -107,17 +120,14 @@ case "${1:-}" in
                 else
                     echo "$_pattern" >>"$_allowlist_file"
                     echo "Added: $_pattern"
-                    echo "Run ./hermit rebuild to apply changes"
+                    rebuild_reminder
                 fi
                 ;;
             remove)
                 shift
                 _domain="${1:-}"
-                if [[ -z "$_domain" ]]; then
-                    echo "Error: 'allowlist remove' requires a domain argument" >&2
-                    exit 1
-                fi
-                _escaped="$(printf '%s' "$_domain" | sed 's/\./\\./g')"
+                require_domain remove "$_domain"
+                _escaped="$(escape_domain "$_domain")"
                 _exact="^${_escaped}$"
                 _sub="^(.+\\.)?${_escaped}$"
                 if ! grep -qF "$_exact" "$_allowlist_file" && ! grep -qF "$_sub" "$_allowlist_file"; then
@@ -128,15 +138,12 @@ case "${1:-}" in
                 grep -vF "$_exact" "$_allowlist_file" | grep -vF "$_sub" >"$_tmpfile"
                 mv "$_tmpfile" "$_allowlist_file"
                 echo "Removed entries for: $_domain"
-                echo "Run ./hermit rebuild to apply changes"
+                rebuild_reminder
                 ;;
             check)
                 shift
                 _domain="${1:-}"
-                if [[ -z "$_domain" ]]; then
-                    echo "Error: 'allowlist check' requires a domain argument" >&2
-                    exit 1
-                fi
+                require_domain check "$_domain"
                 while IFS= read -r _line || [[ -n "$_line" ]]; do
                     [[ -z "$_line" ]] && continue
                     if [[ "$_domain" =~ $_line ]]; then
