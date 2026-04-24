@@ -97,7 +97,7 @@ case "${1:-}" in
             _run_args+=(-v "${_abs_path}:/home/node/workspace")
         elif [[ -f "$SCRIPT_DIR/.hermit-workspace" ]]; then
             _ws_name="$(cat "$SCRIPT_DIR/.hermit-workspace")"
-            _run_args+=(-v "isolated-crustaion-${_ws_name}:/home/node/workspace")
+            _run_args+=(-v "isolated-crustacean-${_ws_name}:/home/node/workspace")
         fi
         compose_cmd run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
         ;;
@@ -374,7 +374,7 @@ case "${1:-}" in
     workspace)
         shift
         _ws_subcmd="${1:-list}"
-        _vol_prefix="isolated-crustaion"
+        _vol_prefix="isolated-crustacean"
         case "$_ws_subcmd" in
             list)
                 docker volume ls --filter "name=${_vol_prefix}" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
