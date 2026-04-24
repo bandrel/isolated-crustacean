@@ -10,7 +10,7 @@ Isolated Crustacean runs Claude Code inside a network-isolated Docker container 
 
 Two Docker containers on two networks:
 
-- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Workspace is a named Docker volume at `/home/<username>/workspace`; both `~/.claude/` and `~/.claude.json` are bind-mounted from the host for persistent auth/config. The container user is dynamically created to match the host user's username, UID, and GID (via `hermit` exporting `HOST_USER`, `HOST_UID`, `HOST_GID`, `HOST_HOME`). Works on both macOS (`/Users/x/`) and Linux (`/home/x/`) hosts.
+- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Container runs as the fixed `node` user with `WORKDIR /home/node/workspace`. The workspace is a named Docker volume (`ic-workspace`); `~/.claude/` and `~/.claude.json` are bind-mounted from the host into `/home/node/` for persistent auth/config. `hermit` exports `HOST_HOME` so bind-mount sources resolve correctly on both macOS (`/Users/x/`) and Linux (`/home/x/`) hosts.
 - **tinyproxy** (alpine:3.21) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Only allows CONNECT on port 443. No TLS interception - it cannot read API keys or conversation content.
 
 The `internal` network is marked `internal: true` (no gateway). The `external` network is a standard bridge with internet access.
@@ -21,7 +21,7 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 - `docker-compose.yml` - service definitions, network topology, volume mounts
 - `claude-code/Dockerfile` - Claude Code container image (node:20-slim + git + claude-code CLI)
 - `tinyproxy/Dockerfile` - proxy container image (alpine + tinyproxy)
-- `tinyproxy/tinyproxy.conf` - proxy config (port 8888, ERE filter, default-deny, ConnectPort 443 only)
+- `tinyproxy/tinyproxy.conf` - proxy config: `FilterDefaultDeny Yes`, `FilterType ere`, `ConnectPort 443` only. HTTPS on 443 is the only traffic ever proxied; all other ports (including HTTP CONNECT on 80) are rejected.
 - `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line)
 - `mcp/templates/` - MCP server compose templates (filesystem.yml, etc.)
 - `mcp/enabled/` - enabled MCP server overrides (dynamically loaded by compose_cmd helper)
@@ -80,6 +80,14 @@ Use the `hermit` wrapper script for all operations:
 ./hermit status
 ```
 
+### Running tests
+
+`./hermit test` requires `bats-core` on the host (`brew install bats-core`). It shells out to `bats tests/` after bringing up tinyproxy. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash` (`run_in_container` / `run_in_container_no_proxy`).
+
+### Workspace selection
+
+`./hermit workspace switch <name>` writes the name to `.hermit-workspace` in the repo root. `./hermit start` reads that file to pick the volume to mount at `/home/node/workspace`. If the file is absent, the default `ic-workspace` volume is used. `--mount <path>` overrides both.
+
 For reference, the underlying docker compose commands are:
 
 ```bash
@@ -121,8 +129,11 @@ When you run `./hermit mcp add <server>`:
 3. Server's internal hostname (`mcp-<server>`) is added to the proxy allowlist
 4. Server is registered in `~/.claude.json` under `mcpServers`
 
+`./hermit mcp add/rm` auto-runs `compose build` + `up -d`. Set `HERMIT_NO_REBUILD=1` to skip (used by tests/scripts).
+
 To add a new MCP server template:
 1. Create `mcp/templates/<name>.yml` with the compose service definition
-2. Include required `x-mcp` metadata
-3. Reference the `ic-internal` network (external: true) and `ic-workspace` volume (external: true)
-4. Users can then enable it with `./hermit mcp add <name>`
+2. Include required `x-mcp` metadata with `name:`, `port:`, `path:` keys indented exactly two spaces — `hermit mcp add` parses them by grepping (`grep '  name:'` etc.), so indentation matters
+3. Name the service `mcp-<name>` — the allowlist pattern and registered URL (`http://mcp-<name>:<port><path>`) both assume this
+4. Reference the `ic-internal` network (external: true) and `ic-workspace` volume (external: true)
+5. Users can then enable it with `./hermit mcp add <name>`
