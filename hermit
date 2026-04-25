@@ -72,6 +72,14 @@ rebuild_reminder() {
     echo "Run ./hermit rebuild to apply changes"
 }
 
+validate_name() {
+    local _name="$1" _label="$2"
+    if [[ ! "$_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Error: $_label '$_name' must contain only letters, numbers, hyphens, and underscores" >&2
+        exit 1
+    fi
+}
+
 case "${1:-}" in
     start)
         shift || true
@@ -97,7 +105,7 @@ case "${1:-}" in
             _run_args+=(-v "${_abs_path}:/home/node/workspace")
         elif [[ -f "$SCRIPT_DIR/.hermit-workspace" ]]; then
             _ws_name="$(cat "$SCRIPT_DIR/.hermit-workspace")"
-            _run_args+=(-v "isolated-crustaion-${_ws_name}:/home/node/workspace")
+            _run_args+=(-v "isolated-crustacean-${_ws_name}:/home/node/workspace")
         fi
         compose_cmd run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
         ;;
@@ -229,6 +237,7 @@ case "${1:-}" in
                             echo "Error: 'allowlist profile save' requires a name" >&2
                             exit 1
                         fi
+                        validate_name "$_prof_name" "profile name"
                         mkdir -p "$_profiles_dir"
                         cp "$_allowlist_file" "$_profiles_dir/$_prof_name"
                         echo "Saved profile: $_prof_name"
@@ -240,6 +249,7 @@ case "${1:-}" in
                             echo "Error: 'allowlist profile load' requires a name" >&2
                             exit 1
                         fi
+                        validate_name "$_prof_name" "profile name"
                         if [[ ! -f "$_profiles_dir/$_prof_name" ]]; then
                             echo "Error: profile '$_prof_name' not found" >&2
                             exit 1
@@ -263,6 +273,7 @@ case "${1:-}" in
                             echo "Error: 'allowlist profile rm' requires a name" >&2
                             exit 1
                         fi
+                        validate_name "$_prof_name" "profile name"
                         if [[ ! -f "$_profiles_dir/$_prof_name" ]]; then
                             echo "Error: profile '$_prof_name' not found" >&2
                             exit 1
@@ -374,7 +385,7 @@ case "${1:-}" in
     workspace)
         shift
         _ws_subcmd="${1:-list}"
-        _vol_prefix="isolated-crustaion"
+        _vol_prefix="isolated-crustacean"
         case "$_ws_subcmd" in
             list)
                 docker volume ls --filter "name=${_vol_prefix}" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
@@ -386,6 +397,7 @@ case "${1:-}" in
                     echo "Error: 'workspace create' requires a name" >&2
                     exit 1
                 fi
+                validate_name "$_ws_name" "workspace name"
                 _full_name="${_vol_prefix}-${_ws_name}"
                 if docker volume inspect "$_full_name" &>/dev/null; then
                     echo "Error: workspace '$_ws_name' already exists" >&2
@@ -401,6 +413,7 @@ case "${1:-}" in
                     echo "Error: 'workspace switch' requires a name" >&2
                     exit 1
                 fi
+                validate_name "$_ws_name" "workspace name"
                 _full_name="${_vol_prefix}-${_ws_name}"
                 if ! docker volume inspect "$_full_name" &>/dev/null; then
                     echo "Error: workspace '$_ws_name' does not exist" >&2
@@ -416,6 +429,7 @@ case "${1:-}" in
                     echo "Error: 'workspace rm' requires a name" >&2
                     exit 1
                 fi
+                validate_name "$_ws_name" "workspace name"
                 _full_name="${_vol_prefix}-${_ws_name}"
                 if ! docker volume inspect "$_full_name" &>/dev/null; then
                     echo "Error: workspace '$_ws_name' does not exist" >&2
@@ -450,6 +464,7 @@ case "${1:-}" in
                     echo "Error: 'mcp add' requires a server name" >&2
                     exit 1
                 fi
+                validate_name "$_mcp_name" "MCP server name"
                 _tmpl="$SCRIPT_DIR/mcp/templates/${_mcp_name}.yml"
                 if [[ ! -f "$_tmpl" ]]; then
                     echo "Error: template '$_mcp_name' not found in mcp/templates/" >&2
