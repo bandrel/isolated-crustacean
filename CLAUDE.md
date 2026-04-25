@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Worktree Directory
+
+Use `.worktrees/` (project-local, hidden) for all git worktrees.
+
 ## Project Overview
 
 Isolated Crustacean runs Claude Code inside a network-isolated Docker container where all internet traffic is forced through a tinyproxy allowlist proxy. The claude-code container has no direct internet access - all outbound requests must pass through tinyproxy's domain allowlist.
@@ -82,7 +86,7 @@ Use the `hermit` wrapper script for all operations:
 
 ### Running tests
 
-`./hermit test` requires `bats-core` on the host (`brew install bats-core`). It shells out to `bats tests/` after bringing up tinyproxy. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash` (`run_in_container` / `run_in_container_no_proxy`).
+`./hermit test` requires `bats-core`, `jq`, and `yq` on the host (`brew install bats-core jq yq`). It shells out to `bats tests/` after bringing up tinyproxy. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash` (`run_in_container` / `run_in_container_no_proxy`).
 
 ### Workspace selection
 
