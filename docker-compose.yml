@@ -25,6 +25,7 @@ services:
       - /tmp
       - /home/node/.cache
       - /home/node/.npm
+      - /home/node/.config
     pids_limit: 512
 
   tinyproxy:
