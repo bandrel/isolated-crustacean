@@ -67,7 +67,7 @@ You have three options to authenticate:
 /login
 ```
 
-This opens an OAuth URL to authenticate. Your credentials are stored on the host at `~/.hermit/claude`, mounted into the container at `/home/node/.claude`, and persisted across sessions.
+This opens an OAuth URL to authenticate. Your credentials are stored on the host at `$HERMIT_CONFIG_DIR/claude` (default `~/.hermit/claude`), mounted into the container at `/home/node/.claude`, and persisted across sessions.
 
 **Option 2: Use a token from the host**
 
@@ -162,14 +162,20 @@ which the server rejects with HTTP 400. Bypassing the proxy for these
 internal names does not widen egress; the container has no route to the
 internet either way.
 
-Once inside Claude (via `./hermit start`), run commands:
+From the Claude shell started by `./hermit start`, run commands directly in Claude:
 
 ```bash
-# Interactive session
-claude
+# Interactive chat
+/continue
 
 # One-off command
 claude --print "Explain this codebase"
+```
+
+To get a bash shell for command-line work, exit Claude and use:
+
+```bash
+./hermit shell
 ```
 
 ### Run commands in the container
@@ -386,19 +392,27 @@ Run specific health diagnostics:
 To manually verify isolation using the probe container (which has curl and dnsutils):
 
 ```bash
-# Should FAIL - no internet from internal network
-docker compose --profile probe run --rm --no-deps -T --entrypoint bash probe -c \
-  "curl -s --max-time 5 https://google.com 2>&1 | head -1"
+export HERMIT_CONFIG_DIR="${HERMIT_CONFIG_DIR:-$HOME/.hermit}"
 
-# Should be REJECTED by proxy (403)
-HERMIT_CONFIG_DIR="$HOME/.hermit" docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
-  -e HTTP_PROXY=http://tinyproxy:8888 -e HTTPS_PROXY=http://tinyproxy:8888 \
-  probe -c "curl -s https://evil.com"
+# Should FAIL - no internet from internal network (DNS resolve error)
+docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
+  -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
+  probe -c "curl -sS --max-time 5 https://example.com 2>&1"
+# Output: curl: (6) Could not resolve host: example.com
 
-# Should SUCCEED - allowed domain via proxy
-HERMIT_CONFIG_DIR="$HOME/.hermit" docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
+# Should be REJECTED by proxy (HTTP 403)
+docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
   -e HTTP_PROXY=http://tinyproxy:8888 -e HTTPS_PROXY=http://tinyproxy:8888 \
-  probe -c "curl -s https://api.anthropic.com | head -1"
+  -e http_proxy=http://tinyproxy:8888 -e https_proxy=http://tinyproxy:8888 \
+  probe -c "curl -s -o /dev/null -w '%{http_connect}\n' https://evil.com"
+# Output: 403
+
+# Should SUCCEED - allowed domain via proxy (HTTP status code, not 000)
+docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
+  -e HTTP_PROXY=http://tinyproxy:8888 -e HTTPS_PROXY=http://tinyproxy:8888 \
+  -e http_proxy=http://tinyproxy:8888 -e https_proxy=http://tinyproxy:8888 \
+  probe -c "curl -s -o /dev/null -w '%{http_code}\n' https://api.anthropic.com"
+# Output: 404 (or other HTTP status, not 000)
 ```
 
 ## Security Properties
@@ -407,6 +421,6 @@ HERMIT_CONFIG_DIR="$HOME/.hermit" docker compose --profile probe run --rm --no-d
 - Tinyproxy cannot read API keys or conversation content (no TLS interception)
 - Docker socket is never mounted (prevents container escape)
 - Container configuration is isolated from the host — stored in `$HERMIT_CONFIG_DIR` on the host (default `~/.hermit/`), not your `~/.claude`, preventing a compromised container from modifying your host config
-- OAuth credentials are persisted in the mounted config directory, not passed via environment variables
+- OAuth credentials from `/login` persist in `$HERMIT_CONFIG_DIR/claude` (mounted at /home/node/.claude) across sessions; `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` are passed through from the host environment only when explicitly set
 - Works on both macOS and Linux hosts
 - Allowlist uses anchored regex to prevent subdomain spoofing

@@ -103,7 +103,7 @@ Workspaces are Docker named volumes with a prefix for isolation: `isolated-crust
 
 `./hermit workspace switch <name>` writes the name to `.hermit-workspace` in the repo root. `./hermit start` reads that file to determine which named volume to use; if the file is absent, the default `ic-workspace` volume is used. `--mount <path>` overrides both, binding the host directory instead.
 
-`./hermit workspace current` shows the currently selected workspace name (reads `.hermit-workspace`).
+`./hermit workspace current` prints the resolved volume name for the currently selected workspace (e.g., `isolated-crustacean-<name>` for named workspaces or `ic-workspace` for default).
 
 At runtime, `hermit start` writes `mcp/.runtime/workspace.yml` which pins the active workspace source for both claude-code and every enabled MCP service, so they always see the same files. The override also sets `NO_PROXY` on claude-code to the enabled `mcp-*` hostnames so Claude connects directly to MCP servers over `ic-internal` without going through tinyproxy.
 
@@ -120,14 +120,14 @@ docker compose down
 
 ## Hardening
 
-The `hermit` script uses `set -euo pipefail` for defensive shell behavior (error on undefined vars, unpiped command failures, set operations).
+The `hermit` script uses `set -euo pipefail`: `-e` exits on any error, `-u` treats undefined variables as errors, `-o pipefail` fails the pipeline if any stage fails.
 
 All services in `docker-compose.yml` and MCP service templates are hardened with:
 - `cap_drop: [ALL]` - no Linux capabilities (most restrictive baseline)
 - `security_opt: [no-new-privileges:true]` - prevent privilege escalation via setuid/setgid
 - `read_only: true` - immutable filesystem (except tmpfs mounts)
-- `tmpfs: [/tmp, /home/*/.cache, /home/*/.npm, /home/*/.config, /var/log/*, /var/run/*]` - writable scratch space
-- `pids_limit: 256` (or 100–512 depending on workload) - prevent fork bombs
+- `tmpfs` with writable scratch space (specific paths set in `docker-compose.yml` per service, e.g., `/tmp`, `/home/node/.cache`, `/var/log/tinyproxy`, `/var/run/tinyproxy`)
+- `pids_limit: 512` (or 100–256 depending on workload) - prevent fork bombs
 
 These are specified in `docker-compose.yml` at the service level, not in Dockerfiles (tmpfs cannot be set in images).
 
@@ -171,6 +171,8 @@ Set `HERMIT_NO_REBUILD=1` to skip step 5 (used by tests/scripts).
 `hermit start` writes `mcp/.runtime/workspace.yml` (git-ignored) via `sync_workspace_override`. It records `x-hermit.workspace_mode`/`workspace_source` and either renames the shared `workspace` volume key (named-volume mode) or replaces the `/home/node/workspace` and each MCP `/data` entry with a bind of the `--mount` path. `compose_cmd` appends it last so it wins the merge; claude-code and every enabled workspace-mounting MCP service therefore resolve to the same source. `mcp add/rm` reuse the currently pinned source (`current_workspace_source`) so a server added mid-session mounts what Claude is using. `hermit mcp sync-workspace [--mount <path>]` regenerates the file without starting Claude (tests use this).
 
 The override also sets `NO_PROXY`/`no_proxy` on claude-code to the enabled `mcp-*` hostnames. Claude must not reach MCP servers through tinyproxy: tinyproxy has no persistent-connection support and, after relaying a streamed SSE response, forwards the client's next keep-alive request as raw proxy-form bytes (HTTP 400 from the server). Single-request access through the proxy (what the probe tests and `^mcp-<name>$` allowlist entries cover) works; Claude's multi-request sessions do not. Registration in claude.json must be `{"type": "http", "url": ...}` — Claude Code skips url-only entries.
+
+MCP servers that need internet access (e.g., `fetch`, `github`) have `HTTP(S)_PROXY` pointed at tinyproxy in their templates, so their own egress goes through the allowlist and is restricted to CONNECT 443 (no direct outbound to other ports).
 
 Compose resolves relative `build:` contexts against the project directory (the first `-f` file's directory, i.e. the repo root), not the template's own directory — so templates must use `./mcp/images/<name>` and `build_mcp_images` passes `--project-directory`.
 
