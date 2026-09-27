@@ -7,17 +7,25 @@ load test_helper
     [[ "$output" == *"proxy"* ]] || [[ "$output" == *"Proxy"* ]] || [[ "$output" == *"tinyproxy"* ]]
 }
 
-@test "doctor output contains DNS check label" {
+@test "doctor DNS check passes" {
     run "$HERMIT" doctor
-    [[ "$output" == *"DNS"* ]] || [[ "$output" == *"dns"* ]]
+    # Anchor to line start and use [^[:cntrl:]]* to avoid matching across lines
+    grep -Eq '^Checking DNS resolution[^[:cntrl:]]*PASS' <<<"$output"
 }
 
-@test "doctor output contains allowed domain check" {
+@test "doctor allowed domain check passes" {
     run "$HERMIT" doctor
-    [[ "$output" == *"allowed"* ]] || [[ "$output" == *"Allowed"* ]] || [[ "$output" == *"allowlist"* ]]
+    # Anchor to line start and use [^[:cntrl:]]* to avoid matching across lines
+    grep -Eq '^Checking allowed domain reachable[^[:cntrl:]]*PASS' <<<"$output"
 }
 
-@test "doctor output contains blocked domain check" {
+@test "doctor blocked domain check passes" {
     run "$HERMIT" doctor
-    [[ "$output" == *"blocked"* ]] || [[ "$output" == *"Blocked"* ]] || [[ "$output" == *"denied"* ]]
+    # Anchor to line start and use [^[:cntrl:]]* to avoid matching across lines
+    grep -Eq '^Checking blocked domain denied[^[:cntrl:]]*PASS' <<<"$output"
+}
+
+@test "doctor exits 0 with no MCP servers enabled" {
+    run "$HERMIT" doctor
+    [ "$status" -eq 0 ]
 }

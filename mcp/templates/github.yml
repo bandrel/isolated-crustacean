@@ -1,21 +1,43 @@
 x-mcp:
   name: github
-  description: "GitHub API access (repos, issues, PRs)"
+  description: "GitHub API access (repos, issues, PRs) - needs GITHUB_PERSONAL_ACCESS_TOKEN"
   transport: streamable-http
   port: 3001
   path: /mcp
+  requires_env: GITHUB_PERSONAL_ACCESS_TOKEN
 
 services:
   mcp-github:
-    image: mcp/github-server:latest
+    build: ./mcp/images/github
+    image: ic-mcp-github
     networks:
       - internal
     environment:
-      MCP_TRANSPORT: streamable-http
-      MCP_PORT: "3001"
-      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      # Read from the host environment when hermit starts the service. Without
+      # it the server initializes but every tool call fails with an auth error.
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PERSONAL_ACCESS_TOKEN:-}"
+      HTTP_PROXY: http://tinyproxy:8888
+      HTTPS_PROXY: http://tinyproxy:8888
+      http_proxy: http://tinyproxy:8888
+      https_proxy: http://tinyproxy:8888
     expose:
       - "3001"
+    healthcheck:
+      # TCP connect to the bridge port (images have node but no curl)
+      test: ["CMD", "node", "-e", "require('net').connect(3001,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 256
 
 networks:
   internal:

@@ -8,10 +8,10 @@ hermit_allowlist() {
 
 setup() {
     TMPFILE="$(mktemp)"
-    # Seed with a couple of known patterns
+    # Seed with a couple of known patterns (use seed.test to avoid conflicts with add/remove tests)
     cat >"$TMPFILE" <<'EOF'
 ^api\.anthropic\.com$
-^(.+\.)?sentry\.io$
+^(.+\.)?seed\.test$
 EOF
 }
 
@@ -23,7 +23,7 @@ teardown() {
     run hermit_allowlist list
     [ "$status" -eq 0 ]
     [[ "$output" == *"api\.anthropic\.com"* ]]
-    [[ "$output" == *"sentry\.io"* ]]
+    [[ "$output" == *"seed\.test"* ]]
 }
 
 @test "allowlist add appends exact match pattern" {
