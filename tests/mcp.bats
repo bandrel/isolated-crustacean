@@ -17,7 +17,7 @@ load test_helper
     for tmpl in "$COMPOSE_PROJECT_DIR"/mcp/templates/*.yml; do
         [[ "$(basename "$tmpl")" == ".gitkeep" ]] && continue
         for field in name description transport port path; do
-            run grep "  $field:" "$tmpl"
+            run yq -e ".x-mcp.$field" "$tmpl"
             [ "$status" -eq 0 ] || {
                 echo "Missing x-mcp.$field in $(basename "$tmpl")"
                 return 1
@@ -29,7 +29,7 @@ load test_helper
 @test "all templates define a service named mcp-<name>" {
     for tmpl in "$COMPOSE_PROJECT_DIR"/mcp/templates/*.yml; do
         [[ "$(basename "$tmpl")" == ".gitkeep" ]] && continue
-        name=$(grep '  name:' "$tmpl" | head -1 | awk '{print $2}')
+        name=$(yq -r '.x-mcp.name' "$tmpl")
         run grep "  mcp-${name}:" "$tmpl"
         [ "$status" -eq 0 ] || {
             echo "Service mcp-${name} not found in $(basename "$tmpl")"

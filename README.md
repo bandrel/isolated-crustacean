@@ -34,6 +34,15 @@ Run Claude Code inside a network-isolated Docker container where all internet tr
 - **external network** - standard bridge with internet access, only tinyproxy connects to it
 - **tinyproxy** bridges both networks, enforcing a domain allowlist before proxying
 
+## Prerequisites
+
+- Docker (with `docker compose`)
+- `jq` — used by `hermit` to edit `~/.claude.json`
+- `yq` — used by `hermit` to parse MCP template metadata
+- `bats-core` — required only for `./hermit test`
+
+On macOS: `brew install jq yq bats-core`.
+
 ## Setup
 
 ```bash

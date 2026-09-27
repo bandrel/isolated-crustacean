@@ -16,6 +16,18 @@ compose_cmd() {
     docker compose "${files[@]}" "$@"
 }
 
+mcp_meta() {
+    local file="$1" key="$2"
+    if ! command -v yq &>/dev/null; then
+        echo "Error: yq not found. Install with: brew install yq" >&2
+        exit 1
+    fi
+    local val
+    val="$(yq -r ".x-mcp.${key} // \"\"" "$file")"
+    [[ "$val" == "null" ]] && val=""
+    printf '%s' "$val"
+}
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") <command>
@@ -300,6 +312,14 @@ case "${1:-}" in
         _pass=0
         _fail=0
 
+        printf "%-40s" "Checking yq installed..."
+        if command -v yq &>/dev/null; then
+            echo "PASS"
+            _pass=$((_pass + 1))
+        else
+            echo "WARN (yq not found; mcp commands will fail)"
+        fi
+
         printf "%-40s" "Checking proxy container..."
         if compose_cmd ps tinyproxy 2>/dev/null | grep -q "running\|Up"; then
             echo "PASS"
@@ -343,7 +363,7 @@ case "${1:-}" in
 
         for _enabled in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
             [[ -e "$_enabled" ]] || continue
-            _mcp_name=$(grep '  name:' "$_enabled" | head -1 | awk '{print $2}')
+            _mcp_name=$(mcp_meta "$_enabled" name)
             _al_pattern="^mcp-${_mcp_name}$"
 
             printf "%-40s" "MCP allowlist: mcp-${_mcp_name}..."
@@ -460,8 +480,8 @@ case "${1:-}" in
                     echo "MCP server '$_mcp_name' is already enabled"
                     exit 0
                 fi
-                _mcp_port=$(grep '  port:' "$_tmpl" | head -1 | awk '{print $2}')
-                _mcp_path=$(grep '  path:' "$_tmpl" | head -1 | awk '{print $2}')
+                _mcp_port=$(mcp_meta "$_tmpl" port)
+                _mcp_path=$(mcp_meta "$_tmpl" path)
                 _mcp_url="http://mcp-${_mcp_name}:${_mcp_port}${_mcp_path}"
                 cp "$_tmpl" "$_enabled"
                 _al_pattern="^mcp-${_mcp_name}$"
@@ -537,8 +557,8 @@ case "${1:-}" in
                 printf "%-15s %-10s %s\n" "NAME" "STATUS" "DESCRIPTION"
                 for _tmpl in "$SCRIPT_DIR"/mcp/templates/*.yml; do
                     [[ -e "$_tmpl" ]] || continue
-                    _name=$(grep '  name:' "$_tmpl" | head -1 | awk '{print $2}')
-                    _desc=$(grep '  description:' "$_tmpl" | head -1 | sed 's/.*description: *"//;s/"$//')
+                    _name=$(mcp_meta "$_tmpl" name)
+                    _desc=$(mcp_meta "$_tmpl" description)
                     if [[ -f "$SCRIPT_DIR/mcp/enabled/${_name}.yml" ]]; then
                         _status="enabled"
                     else
