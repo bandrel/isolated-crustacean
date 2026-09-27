@@ -61,6 +61,11 @@ load test_helper
     [ "$output" = "403" ]
 }
 
+@test "statsig.anthropic.com is blocked via proxy" {
+    run run_in_container "curl -s -o /dev/null -w '%{http_connect}' --max-time 10 https://statsig.anthropic.com"
+    [ "$output" = "403" ]
+}
+
 # --- Regex edge cases ---
 
 @test "exact match rejects prefix mismatch" {
