@@ -170,6 +170,18 @@ sync_workspace_override() {
             echo "Error: path '$_mount_path' does not exist" >&2
             exit 1
         }
+        # Everything under --mount is writable from the container. Mounting
+        # this checkout (or a parent of it) would let a compromised Claude
+        # rewrite hermit, the compose files, the allowlist or mcp/enabled,
+        # i.e. run arbitrary code on the host at the next hermit invocation.
+        # Compare physical paths (pwd -P) so symlinks cannot dodge the check.
+        local _mount_phys _self_phys
+        _mount_phys="$(cd "$_abs_path" && pwd -P)"
+        _self_phys="$(cd "$SCRIPT_DIR" && pwd -P)"
+        if [[ "$_self_phys" == "$_mount_phys" || "$_self_phys" == "${_mount_phys%/}/"* ]]; then
+            echo "Error: refusing to mount '$_abs_path': it is (or contains) this hermit checkout ($_self_phys); a compromised container could rewrite hermit itself" >&2
+            exit 1
+        fi
         write_workspace_override bind "$_abs_path"
         echo "Workspace: bind mount $_abs_path"
     else
