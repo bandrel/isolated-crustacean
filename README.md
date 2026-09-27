@@ -162,21 +162,9 @@ which the server rejects with HTTP 400. Bypassing the proxy for these
 internal names does not widen egress; the container has no route to the
 internet either way.
 
-From the Claude shell started by `./hermit start`, run commands directly in Claude:
-
-```bash
-# Interactive chat
-/continue
-
-# One-off command
-claude --print "Explain this codebase"
-```
-
-To get a bash shell for command-line work, exit Claude and use:
-
-```bash
-./hermit shell
-```
+- `./hermit start` launches Claude Code directly (interactive TUI). Use `/resume` inside Claude to pick up a previous conversation.
+- For one-shot, non-interactive use: `./hermit exec claude --print "Explain this codebase"`
+- For a bash shell in the container: `./hermit shell` (then run `claude` or `claude --print "..."` from there).
 
 ### Run commands in the container
 
