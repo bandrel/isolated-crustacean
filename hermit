@@ -8,6 +8,10 @@ export HOST_HOME="$HOME"
 
 touch "$HOME/.claude.json"
 
+# Workspace volume prefix constants
+WS_PREFIX="isolated-crustacean"
+WS_LEGACY_PREFIX="isolated-crustaion"
+
 compose_cmd() {
     local -a files=(-f "$SCRIPT_DIR/docker-compose.yml")
     for f in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
@@ -26,6 +30,32 @@ mcp_meta() {
     val="$(yq -r ".x-mcp.${key} // \"\"" "$file")"
     [[ "$val" == "null" ]] && val=""
     printf '%s' "$val"
+}
+
+ws_volume() {
+    local _name="$1"
+    local _new_vol="${WS_PREFIX}-${_name}"
+    local _legacy_vol="${WS_LEGACY_PREFIX}-${_name}"
+
+    if docker volume inspect "$_new_vol" &>/dev/null; then
+        printf '%s' "$_new_vol"
+    elif docker volume inspect "$_legacy_vol" &>/dev/null; then
+        printf '%s' "$_legacy_vol" >&1
+        echo "Note: using legacy workspace volume '$_legacy_vol' (created before the prefix rename)" >&2
+    else
+        printf '%s' "$_new_vol"
+    fi
+}
+
+workspace_volume() {
+    if [[ -f "$SCRIPT_DIR/.hermit-workspace" ]]; then
+        local _ws_name
+        _ws_name="$(cat "$SCRIPT_DIR/.hermit-workspace")"
+        validate_name "$_ws_name" "workspace name"
+        ws_volume "$_ws_name"
+    else
+        printf '%s' "ic-workspace"
+    fi
 }
 
 usage() {
@@ -53,6 +83,13 @@ MCP subcommands:
   mcp rm <name>               Disable an MCP server (auto-rebuilds)
   mcp status                  Show running MCP server containers
   mcp restart                 Restart MCP server containers
+
+Workspace subcommands:
+  workspace [list]            List all workspaces
+  workspace create <name>     Create a new workspace
+  workspace switch <name>     Switch to a workspace
+  workspace rm <name>         Remove a workspace
+  workspace current           Show the currently active workspace volume
 
 Allowlist subcommands:
   allowlist [list]              List current allowlist entries with line numbers
@@ -115,9 +152,9 @@ case "${1:-}" in
                 exit 1
             }
             _run_args+=(-v "${_abs_path}:/home/node/workspace")
-        elif [[ -f "$SCRIPT_DIR/.hermit-workspace" ]]; then
-            _ws_name="$(cat "$SCRIPT_DIR/.hermit-workspace")"
-            _run_args+=(-v "isolated-crustacean-${_ws_name}:/home/node/workspace")
+        else
+            _ws_vol="$(workspace_volume)"
+            _run_args+=(-v "${_ws_vol}:/home/node/workspace")
         fi
         compose_cmd run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
         ;;
@@ -407,10 +444,9 @@ case "${1:-}" in
     workspace)
         shift
         _ws_subcmd="${1:-list}"
-        _vol_prefix="isolated-crustacean"
         case "$_ws_subcmd" in
             list)
-                docker volume ls --filter "name=${_vol_prefix}" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
+                docker volume ls --filter "name=${WS_PREFIX}" --filter "name=${WS_LEGACY_PREFIX}" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
                 ;;
             create)
                 shift
@@ -420,12 +456,13 @@ case "${1:-}" in
                     exit 1
                 fi
                 validate_name "$_ws_name" "workspace name"
-                _full_name="${_vol_prefix}-${_ws_name}"
-                if docker volume inspect "$_full_name" &>/dev/null; then
+                _new_vol="${WS_PREFIX}-${_ws_name}"
+                _legacy_vol="${WS_LEGACY_PREFIX}-${_ws_name}"
+                if docker volume inspect "$_new_vol" &>/dev/null || docker volume inspect "$_legacy_vol" &>/dev/null; then
                     echo "Error: workspace '$_ws_name' already exists" >&2
                     exit 1
                 fi
-                docker volume create "$_full_name"
+                docker volume create "$_new_vol"
                 echo "Created workspace: $_ws_name"
                 ;;
             switch)
@@ -436,8 +473,8 @@ case "${1:-}" in
                     exit 1
                 fi
                 validate_name "$_ws_name" "workspace name"
-                _full_name="${_vol_prefix}-${_ws_name}"
-                if ! docker volume inspect "$_full_name" &>/dev/null; then
+                _vol="$(ws_volume "$_ws_name")"
+                if ! docker volume inspect "$_vol" &>/dev/null; then
                     echo "Error: workspace '$_ws_name' does not exist" >&2
                     exit 1
                 fi
@@ -452,14 +489,14 @@ case "${1:-}" in
                     exit 1
                 fi
                 validate_name "$_ws_name" "workspace name"
-                _full_name="${_vol_prefix}-${_ws_name}"
-                if ! docker volume inspect "$_full_name" &>/dev/null; then
+                _vol="$(ws_volume "$_ws_name")"
+                if ! docker volume inspect "$_vol" &>/dev/null; then
                     echo "Error: workspace '$_ws_name' does not exist" >&2
                     exit 1
                 fi
                 read -rp "Remove workspace '$_ws_name'? [y/N] " _confirm
                 if [[ "$_confirm" =~ ^[Yy]$ ]]; then
-                    docker volume rm "$_full_name"
+                    docker volume rm "$_vol"
                     echo "Removed workspace: $_ws_name"
                     if [[ -f "$SCRIPT_DIR/.hermit-workspace" ]] && [[ "$(cat "$SCRIPT_DIR/.hermit-workspace")" == "$_ws_name" ]]; then
                         rm "$SCRIPT_DIR/.hermit-workspace"
@@ -468,9 +505,12 @@ case "${1:-}" in
                     echo "Cancelled"
                 fi
                 ;;
+            current)
+                workspace_volume
+                ;;
             *)
                 echo "Error: unknown workspace subcommand '$_ws_subcmd'" >&2
-                echo "Usage: $(basename "$0") workspace [list|create|switch|rm] [name]" >&2
+                echo "Usage: $(basename "$0") workspace [list|create|switch|rm|current] [name]" >&2
                 exit 1
                 ;;
         esac
