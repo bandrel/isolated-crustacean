@@ -11,6 +11,56 @@ require_yq() {
     fi
 }
 
+require_sole_stack() {
+    # Refuse to run if another hermit stack shares ic-internal network.
+    # Get this checkout's compose project name and list containers on ic-internal
+    # with a different project label. If foreign containers exist, print each one
+    # with its working directory and exit 1.
+
+    # Network might not exist yet; that's fine.
+    if ! docker network inspect ic-internal &>/dev/null; then
+        return 0
+    fi
+
+    local _this_project
+    _this_project="$(compose_cmd config --format json 2>/dev/null | jq -r '.name')" || return 0
+
+    # List containers on ic-internal with their labels
+    local _containers
+    _containers="$(docker ps --all --filter "network=ic-internal" \
+        --format "{{.ID}}\t{{.Label \"com.docker.compose.project\"}}\t{{.Label \"com.docker.compose.project.working_dir\"}}\t{{.Names}}" 2>/dev/null)" || return 0
+
+    local _has_foreign=false
+    local _error_msg=""
+    local _container_id _project _workdir _name
+
+    while IFS=$'\t' read -r _container_id _project _workdir _name; do
+        [[ -z "$_container_id" ]] && continue
+
+        # Skip containers with the same project or no project label
+        if [[ -z "$_project" ]]; then
+            # Container with no compose project label - also a problem
+            _error_msg="${_error_msg}Error: Found container on ic-internal with no project label: $_name (id: ${_container_id:0:12})"$'\n'
+            _has_foreign=true
+        elif [[ "$_project" != "$_this_project" ]]; then
+            # Foreign project
+            _error_msg="${_error_msg}Error: Found running container from project '$_project' on ic-internal (from: ${_workdir:-unknown})"$'\n'
+            if [[ -d "$_workdir" ]]; then
+                _error_msg="${_error_msg}  Stop it with: (cd ${_workdir} && ./hermit stop)"$'\n'
+            else
+                _error_msg="${_error_msg}  Working directory no longer exists; clean up with: docker rm -f $_name"$'\n'
+            fi
+            _has_foreign=true
+        fi
+    done <<<"$_containers"
+
+    if [[ "$_has_foreign" == true ]]; then
+        printf "%s" "$_error_msg" >&2
+        return 1
+    fi
+    return 0
+}
+
 # Every command except usage/help ends up in compose_cmd or an MCP template
 # read, both of which parse YAML with yq, so fail early with one clear message.
 case "${1:-}" in
@@ -356,6 +406,7 @@ validate_name() {
 
 case "${1:-}" in
     start)
+        require_sole_stack
         shift || true
         _mount_path=""
         while [[ $# -gt 0 ]]; do
@@ -384,6 +435,7 @@ case "${1:-}" in
         build_mcp_images
         ;;
     rebuild)
+        require_sole_stack
         compose_cmd --profile probe build
         build_mcp_images
         mcp_services_up
@@ -406,6 +458,7 @@ case "${1:-}" in
         fi
         ;;
     test)
+        require_sole_stack
         if ! command -v bats &>/dev/null; then
             echo "Error: bats-core not found. Install with: brew install bats-core" >&2
             exit 1
@@ -571,6 +624,7 @@ case "${1:-}" in
         esac
         ;;
     exec)
+        require_sole_stack
         if [[ $# -lt 2 ]]; then
             echo "Error: 'exec' requires a command" >&2
             echo "Usage: $(basename "$0") exec <command>" >&2
@@ -580,6 +634,7 @@ case "${1:-}" in
         compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c "$_cmd"
         ;;
     shell)
+        require_sole_stack
         compose_cmd run --rm --no-deps --entrypoint bash claude-code
         ;;
     doctor)
@@ -593,6 +648,17 @@ case "${1:-}" in
         else
             echo "FAIL (yq not found; hermit requires it: brew install yq)"
             _fail=$((_fail + 1))
+        fi
+
+        printf "%-40s" "Checking for other hermit stacks..."
+        _stack_err=""
+        if ! _stack_err=$(require_sole_stack 2>&1); then
+            echo "FAIL"
+            _fail=$((_fail + 1))
+            echo "$_stack_err" >&2
+        else
+            echo "PASS"
+            _pass=$((_pass + 1))
         fi
 
         printf "%-40s" "Checking proxy container..."
@@ -763,6 +829,7 @@ case "${1:-}" in
         _mcp_subcmd="${1:-}"
         case "$_mcp_subcmd" in
             add)
+                require_sole_stack
                 shift
                 _mcp_name="${1:-}"
                 if [[ -z "$_mcp_name" ]]; then
@@ -816,6 +883,7 @@ case "${1:-}" in
                 fi
                 ;;
             rm)
+                require_sole_stack
                 shift
                 _mcp_name="${1:-}"
                 if [[ -z "$_mcp_name" ]]; then
@@ -890,6 +958,7 @@ case "${1:-}" in
                 compose_cmd ps --filter "name=mcp-"
                 ;;
             restart)
+                require_sole_stack
                 _has_enabled=false
                 for _f in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
                     [[ -e "$_f" ]] && _has_enabled=true && break

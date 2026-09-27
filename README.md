@@ -381,6 +381,12 @@ Run diagnostics to verify proxy, DNS, and connectivity:
 ./hermit logs --blocked
 ```
 
+## Troubleshooting
+
+### Running Multiple Hermit Stacks
+
+Only one hermit stack can run at a time. The network names `ic-internal` and `ic-external` are fixed, so running two hermit checkouts simultaneously causes containers from both stacks to share the same network. This creates unpredictable proxy routing and test failures. When you run `./hermit start`, `exec`, `shell`, `rebuild`, or `test`, hermit checks for foreign containers on `ic-internal` and refuses to proceed with a helpful error message (e.g., `Stop it with: (cd <dir> && ./hermit stop)`). You can always use `./hermit status`, `./hermit stop`, and `./hermit logs` to inspect and clean up running stacks.
+
 ## Verify Isolation
 
 Run all isolation verification checks at once:

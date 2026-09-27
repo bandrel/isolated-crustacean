@@ -10,6 +10,8 @@ Use `.worktrees/` (project-local, hidden) for all git worktrees.
 
 Isolated Crustacean runs Claude Code inside a network-isolated Docker container where all internet traffic is forced through a tinyproxy allowlist proxy. The claude-code container has no direct internet access - all outbound requests must pass through tinyproxy's domain allowlist.
 
+**Important:** Only one hermit stack can run at a time. The network names `ic-internal` and `ic-external` are fixed, so running two hermit checkouts simultaneously causes unpredictable proxy routing and test failures. When you run `./hermit start`, `exec`, `shell`, `rebuild`, or `test`, hermit checks for foreign containers on `ic-internal` and refuses to proceed with an error message naming the foreign project and its directory. Use `./hermit stop` to clean up.
+
 ## Architecture
 
 Three Docker containers on two networks:
