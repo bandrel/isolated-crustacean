@@ -49,6 +49,46 @@ On macOS: `brew install jq yq bats-core`.
 ./hermit build
 ```
 
+### Authentication
+
+Claude Code configuration is stored in an isolated container directory (`~/.hermit/claude`) **not** shared with your host — this prevents a compromised container from modifying your host configuration.
+
+You have three options to authenticate:
+
+**Option 1: Log in inside the container (recommended)**
+
+```bash
+./hermit start
+# Inside the container:
+claude --login
+```
+
+This opens an OAuth URL to authenticate. Your credentials are stored inside the container under `~/.hermit/claude` and persisted across sessions.
+
+**Option 2: Use a token from the host**
+
+On your host machine, generate a setup token:
+
+```bash
+claude setup-token
+```
+
+Then pass it to the container before starting:
+
+```bash
+CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) ./hermit start
+```
+
+**Option 3: Use an API key**
+
+If you have an Anthropic API key, export it before starting:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... ./hermit start
+```
+
+The container receives the token or key but **cannot access** your host's `~/.claude` directory — it has its own isolated configuration.
+
 ## Usage
 
 ### Start the environment
@@ -77,21 +117,12 @@ Enable Claude with access to MCP (Model Context Protocol) servers running inside
 When you add a server, hermit automatically:
 - Copies the server template to `mcp/enabled/`
 - Adds the server's internal hostname to the proxy allowlist
-- Configures the server in `~/.claude.json` under `mcpServers`
+- Configures the server in the container's isolated `~/.claude.json` (stored in `~/.hermit/claude.json` on the host)
 
 Available MCP server templates (see `mcp/templates/` for full list):
 
 - `filesystem` - read/write access to the shared workspace volume
 
-### First run - log in
-
-On first use (or when credentials expire), authenticate with OAuth:
-
-```bash
-claude --login
-```
-
-This prints a URL - open it in a browser on your host machine to complete the OAuth flow. Credentials are stored in a persistent Docker volume (`claude-config`) so you only need to do this once.
 
 ### Start Claude
 
@@ -293,6 +324,7 @@ docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://ap
 - Claude Code has zero direct internet access (enforced at Docker network layer)
 - Tinyproxy cannot read API keys or conversation content (no TLS interception)
 - Docker socket is never mounted (prevents container escape)
-- Both `~/.claude/` and `~/.claude.json` are bind-mounted from the host (using absolute `HOST_HOME` path for cross-platform reliability)
+- Container configuration (`~/.claude/`, `~/.claude.json`) is isolated from the host — stored in `~/.hermit/` on the host, never shared directly into the container (prevents compromised container from modifying host config)
+- Auth tokens and API keys are passed through environment variables, not mounted files (container-to-host isolation)
 - Works on both macOS and Linux hosts
 - Allowlist uses anchored regex to prevent subdomain spoofing

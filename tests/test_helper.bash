@@ -5,6 +5,9 @@ COMPOSE_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALLOWLIST_FILE="$COMPOSE_PROJECT_DIR/tinyproxy/allowlist"
 HERMIT="$COMPOSE_PROJECT_DIR/hermit"
 
+# Create a temporary config directory for each test run
+export HERMIT_CONFIG_DIR="$(mktemp -d)"
+
 COMPOSE_FILES=(-f "$COMPOSE_PROJECT_DIR/docker-compose.yml")
 for f in "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml; do
     [[ -e "$f" ]] && COMPOSE_FILES+=(-f "$f")

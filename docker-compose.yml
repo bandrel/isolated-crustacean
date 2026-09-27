@@ -8,12 +8,14 @@ services:
       - HTTPS_PROXY=http://tinyproxy:8888
       - http_proxy=http://tinyproxy:8888
       - https_proxy=http://tinyproxy:8888
+      - ANTHROPIC_API_KEY
+      - CLAUDE_CODE_OAUTH_TOKEN
     networks:
       - internal
     volumes:
       - workspace:/home/node/workspace
-      - ${HOST_HOME:-.}/.claude:/home/node/.claude
-      - ${HOST_HOME:-.}/.claude.json:/home/node/.claude.json
+      - ${HERMIT_CONFIG_DIR:?run via ./hermit}/claude:/home/node/.claude
+      - ${HERMIT_CONFIG_DIR:?run via ./hermit}/claude.json:/home/node/.claude.json
     depends_on:
       - tinyproxy
     cap_drop:

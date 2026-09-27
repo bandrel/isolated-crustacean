@@ -4,9 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-export HOST_HOME="$HOME"
-
-touch "$HOME/.claude.json"
+export HERMIT_CONFIG_DIR="${HERMIT_CONFIG_DIR:-$HOME/.hermit}"
+mkdir -p "$HERMIT_CONFIG_DIR/claude"
+if [[ ! -f "$HERMIT_CONFIG_DIR/claude.json" ]] || [[ ! -s "$HERMIT_CONFIG_DIR/claude.json" ]]; then
+    echo '{}' > "$HERMIT_CONFIG_DIR/claude.json"
+fi
 
 # Workspace volume prefix constants
 WS_PREFIX="isolated-crustacean"
@@ -426,7 +428,7 @@ case "${1:-}" in
             fi
 
             printf "%-40s" "MCP config: ${_mcp_name}..."
-            if jq -e ".mcpServers.${_mcp_name}" "$HOME/.claude.json" &>/dev/null; then
+            if jq -e --arg name "$_mcp_name" '.mcpServers[$name]' "$HERMIT_CONFIG_DIR/claude.json" &>/dev/null; then
                 echo "PASS"
                 _pass=$((_pass + 1))
             else
@@ -545,7 +547,7 @@ case "${1:-}" in
                 if ! grep -qF "$_al_pattern" "$SCRIPT_DIR/tinyproxy/allowlist"; then
                     echo "$_al_pattern" >> "$SCRIPT_DIR/tinyproxy/allowlist"
                 fi
-                _claude_json="$HOME/.claude.json"
+                _claude_json="$HERMIT_CONFIG_DIR/claude.json"
                 if [[ ! -s "$_claude_json" ]]; then
                     echo '{}' > "$_claude_json"
                 fi
@@ -576,7 +578,7 @@ case "${1:-}" in
                 _tmpfile="$(mktemp)"
                 grep -vF "$_al_pattern" "$SCRIPT_DIR/tinyproxy/allowlist" > "$_tmpfile" || true
                 mv "$_tmpfile" "$SCRIPT_DIR/tinyproxy/allowlist"
-                _claude_json="$HOME/.claude.json"
+                _claude_json="$HERMIT_CONFIG_DIR/claude.json"
                 if [[ -s "$_claude_json" ]]; then
                     _tmp_json="$(mktemp)"
                     jq --arg name "$_mcp_name" 'del(.mcpServers[$name])' "$_claude_json" > "$_tmp_json"

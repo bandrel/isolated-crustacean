@@ -40,16 +40,10 @@ load test_helper
 
 setup() {
     cp "$ALLOWLIST_FILE" "$ALLOWLIST_FILE.bak"
-    if [[ -f "$HOME/.claude.json" ]]; then
-        cp "$HOME/.claude.json" "$HOME/.claude.json.bak"
-    fi
 }
 
 teardown() {
     mv "$ALLOWLIST_FILE.bak" "$ALLOWLIST_FILE"
-    if [[ -f "$HOME/.claude.json.bak" ]]; then
-        mv "$HOME/.claude.json.bak" "$HOME/.claude.json"
-    fi
     rm -f "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml
 }
 
@@ -79,7 +73,7 @@ teardown() {
 @test "mcp add updates claude.json mcpServers" {
     HERMIT_NO_REBUILD=1 run "$HERMIT" mcp add filesystem
     [ "$status" -eq 0 ]
-    run jq -r '.mcpServers.filesystem.url' "$HOME/.claude.json"
+    run jq -r '.mcpServers.filesystem.url' "$HERMIT_CONFIG_DIR/claude.json"
     [ "$output" = "http://mcp-filesystem:3000/mcp" ]
 }
 
@@ -114,7 +108,7 @@ teardown() {
     HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
     HERMIT_NO_REBUILD=1 run "$HERMIT" mcp rm filesystem
     [ "$status" -eq 0 ]
-    run jq -r '.mcpServers.filesystem // "null"' "$HOME/.claude.json"
+    run jq -r '.mcpServers.filesystem // "null"' "$HERMIT_CONFIG_DIR/claude.json"
     [ "$output" = "null" ]
 }
 
@@ -172,4 +166,68 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" != "000" ]]
     compose_cmd down
+}
+
+@test "docker compose config uses HERMIT_CONFIG_DIR for mounts" {
+    run docker compose -f "$COMPOSE_PROJECT_DIR/docker-compose.yml" config
+    [ "$status" -eq 0 ]
+    # Should contain HERMIT_CONFIG_DIR paths
+    [[ "$output" == *"$HERMIT_CONFIG_DIR/claude"* ]]
+    # Should NOT contain the host's HOME directory as mount source
+    ! grep -q "${HOME}/.claude:" <<<"$output"
+}
+
+@test "mcp add does not modify host ~/.claude.json" {
+    _host_json="$HOME/.claude.json"
+    # Skip if host's ~/.claude.json doesn't exist
+    [[ -f "$_host_json" ]] || skip "host ~/.claude.json not present"
+
+    # Capture checksum before
+    _checksum_before="$(md5sum "$_host_json" | awk '{print $1}')"
+
+    # Run mcp add with HERMIT_NO_REBUILD
+    HERMIT_NO_REBUILD=1 run "$HERMIT" mcp add filesystem
+    [ "$status" -eq 0 ]
+
+    # Checksum should be identical (host file untouched)
+    _checksum_after="$(md5sum "$_host_json" | awk '{print $1}')"
+    [ "$_checksum_before" = "$_checksum_after" ]
+}
+
+@test "doctor MCP config check works for hyphenated server names" {
+    # Create a temporary template with a hyphenated name
+    _temp_tmpl="$COMPOSE_PROJECT_DIR/mcp/templates/test-hyphen.yml"
+    cat > "$_temp_tmpl" <<'EOF'
+services:
+  mcp-test-hyphen:
+    image: alpine:3.21
+    networks:
+      - ic-internal
+
+x-mcp:
+  name: test-hyphen
+  description: Test template with hyphenated name
+  transport: stdio
+  port: 3000
+  path: /mcp
+
+networks:
+  ic-internal:
+    name: ic-internal
+    external: true
+EOF
+
+    # Add the MCP server
+    HERMIT_NO_REBUILD=1 run "$HERMIT" mcp add test-hyphen
+    [ "$status" -eq 0 ]
+
+    # Doctor should handle hyphenated names correctly
+    run "$HERMIT" doctor
+    # Should check the hyphenated server name without error
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"MCP allowlist: mcp-test-hyphen"* ]]
+    [[ "$output" == *"MCP config: test-hyphen"* ]]
+
+    # Cleanup
+    rm -f "$_temp_tmpl"
 }
