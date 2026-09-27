@@ -10,6 +10,8 @@
 FROM node:24-bookworm-slim
 
 ARG SERVER_VERSION=2026.8.18
+# The server declares mcp<2,>=1.29.0; pin the SDK so rebuilds are reproducible.
+ARG MCP_SDK_VERSION=1.30.0
 ARG SUPERGATEWAY_VERSION=4.0.0
 
 RUN apt-get update \
@@ -17,7 +19,8 @@ RUN apt-get update \
         git python3 python3-venv ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir "mcp-server-git==${SERVER_VERSION}" \
+    && /opt/venv/bin/pip install --no-cache-dir \
+        "mcp-server-git==${SERVER_VERSION}" "mcp==${MCP_SDK_VERSION}" \
     && npm install -g --no-fund --no-audit "supergateway@${SUPERGATEWAY_VERSION}" \
     && npm cache clean --force
 

@@ -24,9 +24,38 @@ compose_cmd() {
     for f in "$SCRIPT_DIR"/mcp/enabled/*.yml; do
         [[ -e "$f" ]] && files+=(-f "$f")
     done
-    # Must come last so its volume definitions win the merge
-    [[ -e "$WS_OVERRIDE" ]] && files+=(-f "$WS_OVERRIDE")
+    # Must come last so its volume definitions win the merge. A stale
+    # override (mentions a service that is no longer enabled) would make
+    # compose fail with "has neither an image nor a build context", so
+    # re-derive it from the currently enabled set first.
+    if [[ -e "$WS_OVERRIDE" ]]; then
+        override_is_stale && refresh_workspace_override
+        files+=(-f "$WS_OVERRIDE")
+    fi
     docker compose "${files[@]}" "$@"
+}
+
+# True if the runtime override's service list no longer matches the enabled
+# MCP set (e.g. mcp rm under HERMIT_NO_REBUILD=1, or a hand-deleted
+# mcp/enabled/*.yml). NO_PROXY is always written as the full enabled list,
+# so comparing it catches additions and removals alike.
+override_is_stale() {
+    local _recorded _expected=""
+    _recorded="$(mcp_meta_key "$WS_OVERRIDE" 'services.claude-code.environment.NO_PROXY')"
+    local _s
+    while read -r _s; do
+        [[ -n "$_s" ]] || continue
+        _expected="${_expected:+$_expected,}$_s"
+    done < <(enabled_mcp_services)
+    [[ "$_recorded" != "$_expected" ]]
+}
+
+# Rewrite the override for the currently enabled services, keeping the
+# workspace mode/source it already pins.
+refresh_workspace_override() {
+    local _ws_mode _ws_src
+    read -r _ws_mode _ws_src < <(current_workspace_source)
+    write_workspace_override "$_ws_mode" "$_ws_src"
 }
 
 # Print "mcp-<name>" for each enabled MCP server, one per line
@@ -58,7 +87,8 @@ current_workspace_source() {
     local _mode="" _src=""
     if [[ -f "$WS_OVERRIDE" ]]; then
         _mode="$(mcp_meta_key "$WS_OVERRIDE" x-hermit.workspace_mode)"
-        _src="$(mcp_meta_key "$WS_OVERRIDE" x-hermit.workspace_source)"
+        # Stored compose-escaped ($$); undo that to get the real path back
+        _src="$(mcp_meta_key "$WS_OVERRIDE" x-hermit.workspace_source | sed 's/\$\$/$/g')"
     fi
     if [[ -z "$_mode" || -z "$_src" ]]; then
         _mode="volume"
@@ -71,6 +101,9 @@ current_workspace_source() {
 # and every enabled MCP service that mounts the workspace.
 write_workspace_override() {
     local _mode="$1" _src="$2"
+    # compose interpolates $VAR / ${VAR} everywhere in the file (a bind path
+    # like "/tmp/my $HOME dir" would be rewritten); $$ is the literal escape.
+    _src="${_src//\$/\$\$}"
     mkdir -p "$(dirname "$WS_OVERRIDE")"
     local _tmp
     _tmp="$(mktemp)"
@@ -310,7 +343,10 @@ case "${1:-}" in
         # The runtime override pins the workspace source for claude-code and
         # every enabled MCP service, so no -v is needed on the run itself.
         sync_workspace_override "$_mount_path"
-        mcp_services_up
+        mcp_services_up || {
+            echo "Error: an MCP service failed to start or pass its healthcheck. Inspect with './hermit mcp status' and './hermit logs', or disable it with './hermit mcp rm <name>'" >&2
+            exit 1
+        }
         compose_cmd run --rm claude-code
         ;;
     build)
@@ -722,11 +758,12 @@ case "${1:-}" in
                 if [[ -n "$_req_env" && -z "${!_req_env:-}" ]]; then
                     echo "Warning: $_req_env is not set in your environment; '$_mcp_name' will start but its tool calls will fail until you export it and run ./hermit mcp restart" >&2
                 fi
+                # Re-pin the workspace override with the current source so the
+                # new service mounts what claude-code is (or will be) using.
+                # Always done (it is only a file write): a stale override that
+                # mentions a service that is no longer enabled breaks compose.
+                refresh_workspace_override
                 if [[ "${HERMIT_NO_REBUILD:-}" != "1" ]]; then
-                    # Re-pin the workspace override with the current source so the
-                    # new service mounts what claude-code is (or will be) using.
-                    read -r _ws_mode _ws_src < <(current_workspace_source)
-                    write_workspace_override "$_ws_mode" "$_ws_src"
                     # tinyproxy bakes the allowlist into its image, so it must be
                     # rebuilt (and recreated by up) for ^mcp-<name>$ to take effect.
                     compose_cmd build tinyproxy "mcp-${_mcp_name}"
@@ -765,9 +802,10 @@ case "${1:-}" in
                     mv "$_tmp_json" "$_claude_json"
                 fi
                 echo "Disabled MCP server: $_mcp_name"
+                # Always prune the removed service from the override (file write
+                # only); otherwise every later compose_cmd fails on it.
+                refresh_workspace_override
                 if [[ "${HERMIT_NO_REBUILD:-}" != "1" ]]; then
-                    read -r _ws_mode _ws_src < <(current_workspace_source)
-                    write_workspace_override "$_ws_mode" "$_ws_src"
                     # Rebuild tinyproxy so the removed allowlist entry is gone
                     compose_cmd build tinyproxy
                     mcp_services_up
