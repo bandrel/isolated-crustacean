@@ -12,7 +12,7 @@
 
 ### Task 1: Name the internal network explicitly
 
-The `internal` network in `docker-compose.yml` uses compose's auto-generated name (e.g., `isolated-crustaion_internal`). Override files need to reference it with `external: true`, which requires a stable, explicit name.
+The `internal` network in `docker-compose.yml` uses compose's auto-generated name (e.g., `isolated-crustacean_internal`). Override files need to reference it with `external: true`, which requires a stable, explicit name.
 
 **Files:**
 - Modify: `docker-compose.yml:26-29`

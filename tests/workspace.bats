@@ -9,8 +9,8 @@ setup() {
 }
 
 teardown() {
-    # Clean up any test volumes (hermit prepends "isolated-crustaion-")
-    docker volume ls --filter "name=isolated-crustaion-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
+    # Clean up any test volumes (hermit prepends "isolated-crustacean-")
+    docker volume ls --filter "name=isolated-crustacean-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
     rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
 }
 
@@ -22,7 +22,7 @@ teardown() {
 @test "workspace create makes a new volume" {
     run "$HERMIT" workspace create "$_test_name"
     [ "$status" -eq 0 ]
-    run docker volume inspect "isolated-crustaion-${_test_name}"
+    run docker volume inspect "isolated-crustacean-${_test_name}"
     [ "$status" -eq 0 ]
 }
 
@@ -48,7 +48,7 @@ teardown() {
     "$HERMIT" workspace create "$_test_name"
     run bash -c "echo y | '$HERMIT' workspace rm '$_test_name'"
     [ "$status" -eq 0 ]
-    run docker volume inspect "isolated-crustaion-${_test_name}"
+    run docker volume inspect "isolated-crustacean-${_test_name}"
     [ "$status" -ne 0 ]
 }
 
