@@ -42,6 +42,38 @@ _test_vol_prefix="hermittest-mcp"
 _hermit_workspace_bak=""
 _proxy_rebuilt=""
 
+# The per-test teardown wipes mcp/enabled/*.yml and the runtime override and
+# removes the containers of every enabled server. Park whatever the user had
+# enabled before the suite starts (so only test-enabled servers are ever
+# touched) and put it back afterwards.
+_user_state_dir=""
+
+setup_file() {
+    _user_state_dir="$BATS_FILE_TMPDIR/user-mcp-state"
+    mkdir -p "$_user_state_dir/enabled"
+    local _f
+    for _f in "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml; do
+        [[ -e "$_f" ]] && mv "$_f" "$_user_state_dir/enabled/"
+    done
+    if [[ -f "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml" ]]; then
+        mv "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml" "$_user_state_dir/workspace.yml"
+    fi
+    return 0
+}
+
+teardown_file() {
+    _user_state_dir="$BATS_FILE_TMPDIR/user-mcp-state"
+    local _f
+    for _f in "$_user_state_dir"/enabled/*.yml; do
+        [[ -e "$_f" ]] && mv "$_f" "$COMPOSE_PROJECT_DIR/mcp/enabled/"
+    done
+    if [[ -f "$_user_state_dir/workspace.yml" ]]; then
+        mkdir -p "$COMPOSE_PROJECT_DIR/mcp/.runtime"
+        mv "$_user_state_dir/workspace.yml" "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml"
+    fi
+    return 0
+}
+
 setup() {
     cp "$ALLOWLIST_FILE" "$ALLOWLIST_FILE.bak"
     _test_name="${_test_vol_prefix}-$$-${BATS_TEST_NUMBER}"
@@ -72,7 +104,8 @@ bring_up_mcp() {
 }
 
 teardown() {
-    # Remove MCP containers while their compose files are still enabled
+    # Remove MCP containers while their compose files are still enabled. Only
+    # test-enabled servers are present: setup_file parked the user's own.
     local _f _name
     for _f in "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml; do
         [[ -e "$_f" ]] || continue

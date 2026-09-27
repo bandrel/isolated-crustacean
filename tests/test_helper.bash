@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # Shared helpers for bats isolation tests
 
+# Never let real credentials leak into test output: compose passes these
+# through to claude-code / mcp-github, so `docker compose config` (which
+# several tests print and grep) would otherwise echo them.
+unset ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN GITHUB_TOKEN
+
 COMPOSE_PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALLOWLIST_FILE="$COMPOSE_PROJECT_DIR/tinyproxy/allowlist"
 HERMIT="$COMPOSE_PROJECT_DIR/hermit"
 
-# Create a temporary config directory for each test run
-export HERMIT_CONFIG_DIR="$(mktemp -d)"
+# Isolated config dir per test (never the real ~/.hermit). bats sources this
+# file once per test process, so BATS_TEST_TMPDIR gives each test its own
+# directory; during bats' file-level phases fall back to the file/run dirs.
+# All of these live under BATS_RUN_TMPDIR, which bats removes at exit.
+export HERMIT_CONFIG_DIR="${BATS_TEST_TMPDIR:-${BATS_FILE_TMPDIR:-$BATS_RUN_TMPDIR}}/hermit-config"
+mkdir -p "$HERMIT_CONFIG_DIR/claude"
+[[ -s "$HERMIT_CONFIG_DIR/claude.json" ]] || echo '{}' > "$HERMIT_CONFIG_DIR/claude.json"
 
 COMPOSE_FILES=(-f "$COMPOSE_PROJECT_DIR/docker-compose.yml")
 for f in "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml; do
