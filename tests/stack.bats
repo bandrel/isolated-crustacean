@@ -8,12 +8,11 @@ load test_helper
 get_decoy_image() {
     local _img
     _img="$(hermit_compose images -q tinyproxy 2>/dev/null | head -1)"
-    if [[ -n "$_img" ]]; then
-        echo "$_img"
-    else
-        # Fallback (should not happen after build)
-        echo "alpine:latest"
+    if [[ -z "$_img" ]]; then
+        echo "Error: tinyproxy image not found; run ./hermit build first" >&2
+        return 1
     fi
+    echo "$_img"
 }
 
 setup() {
@@ -135,12 +134,14 @@ teardown() {
 @test "exec refuses to run with container missing project label" {
     local _decoy_name="decoy-no-label-$BATS_TEST_NUMBER-$RANDOM"
 
-    # Start a container on ic-internal without compose labels
-    # Use alpine:3.22 which is cached locally and has no docker compose labels
+    # Start a container with empty project label (treated same as missing)
+    # Use tinyproxy image with --label key= to override the compose labels with empty values
     run docker run -d \
         --name "$_decoy_name" \
         --network ic-internal \
-        --entrypoint sleep alpine:3.22 300
+        --label "com.docker.compose.project=" \
+        --label "com.docker.compose.service=" \
+        --entrypoint sleep "$DECOY_IMAGE" 300
     [ "$status" -eq 0 ]
     export DECOY_CONTAINER_ID="$output"
 
