@@ -43,7 +43,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /var/log/tinyproxy
       - /var/run/tinyproxy
     pids_limit: 100
 

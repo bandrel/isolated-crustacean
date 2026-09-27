@@ -1,8 +1,6 @@
 FROM alpine:3.22
 
 RUN apk add --no-cache tinyproxy \
-    && mkdir -p /var/log/tinyproxy \
-    && chown nobody:nogroup /var/log/tinyproxy \
     && mkdir -p /var/run/tinyproxy \
     && chown nobody:nogroup /var/run/tinyproxy
 
