@@ -101,7 +101,8 @@ current_workspace_source() {
     local _mode="" _src=""
     if [[ -f "$WS_OVERRIDE" ]]; then
         _mode="$(mcp_meta_key "$WS_OVERRIDE" x-hermit.workspace_mode)"
-        # Stored compose-escaped ($$); undo that to get the real path back
+        # yq already undoes the single-quote escaping ('' -> '); the value is
+        # still compose-escaped ($$), so undo that to get the real path back
         _src="$(mcp_meta_key "$WS_OVERRIDE" x-hermit.workspace_source | sed 's/\$\$/$/g')"
     fi
     if [[ -z "$_mode" || -z "$_src" ]]; then
@@ -118,6 +119,9 @@ write_workspace_override() {
     # compose interpolates $VAR / ${VAR} everywhere in the file (a bind path
     # like "/tmp/my $HOME dir" would be rewritten); $$ is the literal escape.
     _src="${_src//\$/\$\$}"
+    # Emitted as a YAML single-quoted scalar: no escape sequences are
+    # interpreted (a path with " or \ stays literal); only ' needs doubling.
+    _src="${_src//\'/\'\'}"
     mkdir -p "$(dirname "$WS_OVERRIDE")"
     local _tmp
     _tmp="$(mktemp)"
@@ -140,7 +144,7 @@ write_workspace_override() {
         echo "# claude-code reach enabled MCP servers directly (NO_PROXY)."
         echo "x-hermit:"
         echo "  workspace_mode: $_mode"
-        echo "  workspace_source: \"$_src\""
+        echo "  workspace_source: '$_src'"
         echo "services:"
         echo "  claude-code:"
         echo "    environment:"
@@ -157,7 +161,7 @@ write_workspace_override() {
             # container path) with a bind mount of the same host path.
             echo "    volumes:"
             echo "      - type: bind"
-            echo "        source: \"$_src\""
+            echo "        source: '$_src'"
             echo "        target: /home/node/workspace"
             local _svc _target
             while read -r _svc _target; do
@@ -165,7 +169,7 @@ write_workspace_override() {
                 echo "  $_svc:"
                 echo "    volumes:"
                 echo "      - type: bind"
-                echo "        source: \"$_src\""
+                echo "        source: '$_src'"
                 echo "        target: $_target"
             done < <(workspace_mounting_services)
         fi

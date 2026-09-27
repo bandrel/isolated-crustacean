@@ -424,6 +424,29 @@ teardown() {
     [[ "$output" == *"marker"* ]]
 }
 
+@test "--mount path containing ' and \" is written as a valid YAML scalar" {
+    _base="$(mktemp -d /tmp/hermit-quote.XXXXXX)"
+    _dir="$_base/it's a \"quoted\" dir"
+    mkdir -p "$_dir"
+    echo marker > "$_dir/.hermit-quote-marker"
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    run "$HERMIT" mcp sync-workspace --mount "$_dir"
+    [ "$status" -eq 0 ]
+    _expected="$(cd "$_dir" && pwd)"
+    # The file must parse, and yq must give back the exact path
+    [ "$(yq -r '.x-hermit.workspace_source' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml")" = "$_expected" ]
+    [ "$(workspace_mount_source claude-code /home/node/workspace)" = "$_expected" ]
+    [ "$(workspace_mount_source mcp-filesystem /data)" = "$_expected" ]
+    # Round-trips through current_workspace_source on a rewrite
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add git
+    [ "$(workspace_mount_source mcp-git /data)" = "$_expected" ]
+    run hermit_compose run --rm --no-deps -T --entrypoint bash claude-code \
+        -c 'cat /home/node/workspace/.hermit-quote-marker'
+    rm -rf "$_base"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"marker"* ]]
+}
+
 @test "mcp sync-workspace --mount with nonexistent path exits non-zero" {
     run "$HERMIT" mcp sync-workspace --mount /nonexistent/path/xyz
     [ "$status" -ne 0 ]
