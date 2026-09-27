@@ -21,7 +21,7 @@ Run Claude Code inside a network-isolated Docker container where all internet tr
 
 ```
 [claude-code container]          [tinyproxy container]
-  - node:20-slim                   - alpine:3.21
+  - node:24-bookworm-slim          - alpine:3.22
   - claude-code CLI                - tinyproxy
   - HTTP(S)_PROXY set              - allowlist filtering
   - NO direct internet             - domain allowlist
@@ -29,6 +29,10 @@ Run Claude Code inside a network-isolated Docker container where all internet tr
         +--- internal network (no gw) ---+          |
                                          +--- external network --- internet
 ```
+
+Three other services run on the internal network:
+- **probe** (debian:bookworm-slim) - isolation verification test harness, runs in profile "probe"
+- **MCP servers** - pluggable Model Context Protocol servers (filesystem, git, fetch, sqlite, github)
 
 - **internal network** (`internal: true`) - no default gateway, so claude-code cannot route to the internet
 - **external network** - standard bridge with internet access, only tinyproxy connects to it
@@ -51,7 +55,7 @@ On macOS: `brew install jq yq bats-core`.
 
 ### Authentication
 
-Claude Code configuration is stored in an isolated container directory (`/home/node/.claude`), saved on the host at `~/.hermit/claude` — **not** shared with your host's `~/.claude` — which prevents a compromised container from modifying your host configuration.
+Claude Code configuration is stored in an isolated container directory (`/home/node/.claude`), saved on the host at `$HERMIT_CONFIG_DIR/claude` (default: `~/.hermit/claude`) — **not** shared with your host's `~/.claude` — which prevents a compromised container from modifying your host configuration.
 
 You have three options to authenticate:
 
@@ -127,17 +131,14 @@ Available MCP server templates (see `mcp/templates/`):
 | `filesystem` | Upstream reference server (`@modelcontextprotocol/server-filesystem`) | Serves the workspace at `/data` |
 | `git` | Upstream reference server (`mcp-server-git`) | Tools take `repo_path`, e.g. `/data/myproject` |
 | `fetch` | Upstream reference server (`mcp-server-fetch`) | Fetches go through tinyproxy, so only allowlisted HTTPS hosts work |
-| `sqlite` | Reference server, now in `servers-archived` (`mcp-server-sqlite`) | Database at `/data/sqlite.db`; pinned to `mcp==1.29.0` SDK |
+| `sqlite` | Reference server (`mcp-server-sqlite`) | Database at `/data/sqlite.db`; pinned to a stable SDK version |
 | `github` | Official `ghcr.io/github/github-mcp-server` binary | Export `GITHUB_PERSONAL_ACCESS_TOKEN` before `mcp add`/`start`; tool calls fail without it |
 
 The upstream servers only speak stdio, so each template builds a local image
 (`mcp/images/<name>/Dockerfile`) that installs the pinned server package at
 build time and wraps it with [supergateway](https://github.com/supercorp-ai/supergateway)
-as a stdio-to-Streamable-HTTP bridge. Runtime containers have no internet
+as a stdio→Streamable-HTTP bridge listening on a hardened port. Runtime containers have no internet
 access, so nothing is downloaded when they start.
-
-The `postgres` template was removed: tinyproxy only allows `CONNECT` to port
-443, so a database server can never be reached from the isolated network.
 
 MCP servers that mount the workspace at `/data` always see the same files as
 Claude Code. `hermit start` writes `mcp/.runtime/workspace.yml` (git-ignored)
@@ -213,12 +214,14 @@ claude --print "Explain this codebase"
 ./hermit workspace list                  # List all workspaces
 ./hermit workspace create <name>         # Create a new workspace
 ./hermit workspace switch <name>         # Switch active workspace
+./hermit workspace current               # Show the currently active workspace
 ./hermit workspace rm <name>             # Remove a workspace
 
 # MCP server management
 ./hermit mcp list                        # List available servers and status
 ./hermit mcp add <server>                # Enable an MCP server from template
 ./hermit mcp rm <server>                 # Disable an MCP server
+./hermit mcp sync-workspace [--mount]    # Regenerate workspace override without starting
 ./hermit mcp status                      # Show running MCP server containers
 ./hermit mcp restart                     # Restart MCP server containers
 ```
@@ -299,12 +302,47 @@ Default allowed domains:
 | `console.anthropic.com` | Console OAuth |
 | `platform.claude.com` | Console auth |
 | `claude.ai` | claude.ai OAuth |
-| `statsig.anthropic.com` | Feature flags |
-| `statsig.com` | Feature flags |
-| `*.sentry.io` | Error reporting |
 | `registry.npmjs.org` | npm packages |
 | `github.com`, `*.github.com` | Git operations |
 | `*.githubusercontent.com` | GitHub raw content |
+
+Note: Claude Code disables nonessential traffic with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, which suppresses requests for feature flags and error reporting.
+
+## Threat Model
+
+### What Isolation Guarantees
+
+- **No direct egress**: Claude Code container has zero direct route to the internet. It can only reach external hosts via tinyproxy.
+- **Allowlist enforcement**: Only domains matching regex patterns in `tinyproxy/allowlist` are reachable. All others are rejected with HTTP 403.
+- **No DNS leakage**: The internal network has no default gateway. External hostnames do not resolve on it; only `mcp-*` internal services and tinyproxy itself are reachable by name.
+- **No TLS interception**: Tinyproxy is a transparent forward proxy, not a man-in-the-middle. It cannot read, intercept, or modify API keys, conversation content, or any other TLS-encrypted data.
+- **Isolated configuration**: Container configuration (`~/.claude/`, `~/.claude.json`) is stored in `$HERMIT_CONFIG_DIR` on the host (default `~/.hermit/`), not mounted from your host's `~/.claude`, so a compromised container cannot modify your host config.
+
+### What It Does NOT Guarantee
+
+- **Exfiltration via allowlisted services**: User-controlled data can still be exfiltrated to any allowlisted service that accepts uploads or arbitrary content. Examples:
+  - **api.anthropic.com**: Another Claude Code instance or client calling the API with a different key
+  - **github.com**: Pushing code to a repo, creating gists, opening issues
+  - **registry.npmjs.org**: Publishing packages
+- **Allowlist as destination boundary, not data boundary**: The allowlist restricts *where* the container can connect, not *what data* it can send. A malicious prompt injection or supply chain attack could exfiltrate credentials or conversation content to any of these services.
+
+### How to Tighten This
+
+- Remove GitHub and npm entries from `tinyproxy/allowlist` if you don't need them:
+  ```bash
+  ./hermit allowlist remove github.com
+  ./hermit allowlist remove npmjs.org
+  ./hermit rebuild
+  ```
+- Use allowlist profiles to switch between strict and permissive configurations:
+  ```bash
+  ./hermit allowlist profile save strict
+  ./hermit allowlist profile load strict
+  ```
+
+### Residual Risk
+
+- **Docker escape**: If the container itself is compromised and a Docker escape is possible, the allowlist provides no protection. This is a general Docker limitation, not specific to Isolated Crustacean.
 
 ## Health Check
 

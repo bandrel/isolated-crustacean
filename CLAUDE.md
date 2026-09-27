@@ -12,23 +12,29 @@ Isolated Crustacean runs Claude Code inside a network-isolated Docker container 
 
 ## Architecture
 
-Two Docker containers on two networks:
+Three Docker containers on two networks:
 
-- **claude-code** (node:20-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Container runs as the fixed `node` user with `WORKDIR /home/node/workspace`. The workspace is a named Docker volume (`ic-workspace`); `~/.claude/` and `~/.claude.json` are bind-mounted from the host into `/home/node/` for persistent auth/config. `hermit` exports `HOST_HOME` so bind-mount sources resolve correctly on both macOS (`/Users/x/`) and Linux (`/home/x/`) hosts.
-- **tinyproxy** (alpine:3.21) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Only allows CONNECT on port 443. No TLS interception - it cannot read API keys or conversation content.
+- **claude-code** (node:24-bookworm-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Container runs as the fixed `node` user with `WORKDIR /home/node/workspace`. The workspace is a named Docker volume (`ic-workspace`, git-ignored override via `mcp/.runtime/workspace.yml`); `~/.claude/` and `~/.claude.json` are bind-mounted from `$HERMIT_CONFIG_DIR` (default `~/.hermit/`) on the host into `/home/node/` for persistent auth/config.
+- **tinyproxy** (alpine:3.22) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Restricts CONNECT requests to port 443 only. Plain-HTTP forwarding (not port-restricted) is used by MCP servers and the probe test harness to reach allowlisted hosts. No TLS interception — it cannot read API keys or conversation content.
+- **probe** (debian:bookworm-slim) - isolation verification test harness, runs in profile "probe". Used by `./hermit test` and `./hermit doctor` to verify proxy connectivity and DNS behavior.
 
 The `internal` network is marked `internal: true` (no gateway). The `external` network is a standard bridge with internet access.
 
 ## Key Files
 
-- `hermit` - CLI wrapper for all common operations
-- `docker-compose.yml` - service definitions, network topology, volume mounts
-- `claude-code/Dockerfile` - Claude Code container image (node:20-slim + git + claude-code CLI)
-- `tinyproxy/Dockerfile` - proxy container image (alpine + tinyproxy)
-- `tinyproxy/tinyproxy.conf` - proxy config: `FilterDefaultDeny Yes`, `FilterType ere`, `ConnectPort 443` only. HTTPS on 443 is the only traffic ever proxied; all other ports (including HTTP CONNECT on 80) are rejected.
-- `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line)
-- `mcp/templates/` - MCP server compose templates (filesystem.yml, etc.)
-- `mcp/enabled/` - enabled MCP server overrides (dynamically loaded by compose_cmd helper)
+- `hermit` - CLI wrapper for all common operations (workspace, MCP, allowlist, compose helpers)
+- `docker-compose.yml` - service definitions, network topology, volume mounts for claude-code, tinyproxy, and probe
+- `claude-code/Dockerfile` - Claude Code container image (node:24-bookworm-slim + git + claude-code CLI). Installs Claude Code at a pinned version via ARG CLAUDE_CODE_VERSION.
+- `tinyproxy/Dockerfile` - proxy container image (alpine:3.22 + tinyproxy). Runs as nobody:nogroup with tmpfs-backed logs and runtime socket dirs.
+- `tinyproxy/tinyproxy.conf` - proxy config: `FilterDefaultDeny Yes`, `FilterType ere`, `ConnectPort 443`. Restricts CONNECT to 443 only. Plain-HTTP forwarding is not port-restricted and is used by MCP and probe services.
+- `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line), baked into the tinyproxy image at build time.
+- `probe/Dockerfile` - test harness container image (debian:bookworm-slim + curl + dnsutils). Runs commands that `tests/*.bats` and `./hermit doctor` invoke via `compose_cmd run --rm probe`.
+- `mcp/templates/` - MCP server compose service templates (filesystem.yml, git.yml, fetch.yml, sqlite.yml, github.yml) with `x-mcp` metadata
+- `mcp/enabled/` - enabled MCP server overrides (dynamically loaded last by compose_cmd, so they win the merge and their port claims don't clash with templates)
+- `mcp/images/<name>/Dockerfile` - build context for each MCP server image; installs the pinned server package and wraps it with supergateway as a stdio→Streamable-HTTP bridge
+- `mcp/.runtime/workspace.yml` - git-ignored, generated at runtime by hermit. Pins workspace source (named volume or --mount path) for claude-code and every enabled workspace-mounting MCP service. Also sets NO_PROXY on claude-code to enabled mcp-* hostnames.
+- `tests/test_helper.bash` - shared test helper functions (`run_in_container`, `run_in_container_no_proxy`, `run_in_claude_container`)
+- `tests/*.bats` - BATS test suites for isolation, MCP, allowlist, doctor, exec, logs, mount, and workspace functionality
 
 ## Common Commands
 
@@ -86,11 +92,20 @@ Use the `hermit` wrapper script for all operations:
 
 ### Running tests
 
-`./hermit test` requires `bats-core`, `jq`, and `yq` on the host (`brew install bats-core jq yq`). It shells out to `bats tests/` after bringing up tinyproxy. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash` (`run_in_container` / `run_in_container_no_proxy`).
+`./hermit test` requires `bats-core`, `jq`, and `yq` on the host (`brew install bats-core jq yq`). It shells out to `bats tests/` after bringing up tinyproxy and the probe service. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash`:
+- `run_in_container <cmd>` - run command in claude-code with proxy env set
+- `run_in_container_no_proxy <cmd>` - run command in claude-code without proxy env
+- `run_in_claude_container <cmd>` - run command in claude-code (alias for run_in_container)
 
 ### Workspace selection
 
-`./hermit workspace switch <name>` writes the name to `.hermit-workspace` in the repo root. `./hermit start` reads that file to pick the volume to mount at `/home/node/workspace`. If the file is absent, the default `ic-workspace` volume is used. `--mount <path>` overrides both.
+Workspaces are Docker named volumes with a prefix for isolation: `isolated-crustacean-<name>` for new volumes. The script supports a legacy prefix `isolated-crustaion-<name>` (note the typo) for backward compatibility and migrates it when needed.
+
+`./hermit workspace switch <name>` writes the name to `.hermit-workspace` in the repo root. `./hermit start` reads that file to determine which named volume to use; if the file is absent, the default `ic-workspace` volume is used. `--mount <path>` overrides both, binding the host directory instead.
+
+`./hermit workspace current` shows the currently selected workspace name (reads `.hermit-workspace`).
+
+At runtime, `hermit start` writes `mcp/.runtime/workspace.yml` which pins the active workspace source for both claude-code and every enabled MCP service, so they always see the same files. The override also sets `NO_PROXY` on claude-code to the enabled `mcp-*` hostnames so Claude connects directly to MCP servers over `ic-internal` without going through tinyproxy.
 
 For reference, the underlying docker compose commands are:
 
@@ -107,7 +122,7 @@ docker compose down
 
 Edit `tinyproxy/allowlist` to add/remove domains. Each line is an anchored ERE regex (e.g., `^example\.com$` for exact match, `^(.+\.)?example\.com$` to include subdomains). After changes, rebuild with `./hermit rebuild`. The filter uses `FilterDefaultDeny Yes` so only explicitly matched domains are allowed.
 
-Default allowed domains cover: Anthropic API/auth, statsig (feature flags), sentry (error reporting), npm registry, and GitHub.
+Default allowed domains cover: Anthropic API/auth, npm registry, and GitHub. Claude Code sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` to suppress feature flags, error reporting, and other non-essential traffic.
 
 Allowlist profiles let you save/load named configurations:
 
@@ -127,14 +142,14 @@ Templates are stored in `mcp/templates/` (e.g., `filesystem.yml`). Each template
 - Network and volume references (ic-internal, ic-workspace)
 - Metadata in `x-mcp` section (name, description, transport, port, path; optional `requires_env`)
 
-Shipped templates: `filesystem`, `git`, `fetch`, `sqlite` (upstream reference servers) and `github` (official binary). All upstream servers are stdio-only, so each `mcp/images/<name>/Dockerfile` installs the pinned server package at build time and wraps it with `supergateway` (pinned) as a stdio→Streamable HTTP bridge listening on `x-mcp.port` at `x-mcp.path`. Runtime containers have no internet, so nothing may be downloaded at start. `postgres` was removed (the proxy only allows CONNECT to 443, so no database is reachable).
+Shipped templates: `filesystem`, `git`, `fetch`, `sqlite` (upstream reference servers) and `github` (official binary). All upstream servers are stdio-only, so each `mcp/images/<name>/Dockerfile` installs the pinned server package at build time and wraps it with `supergateway` (pinned) as a stdio→Streamable HTTP bridge listening on `x-mcp.port` at `x-mcp.path`. Runtime containers have no internet, so nothing may be downloaded at start.
 
 When you run `./hermit mcp add <server>`:
 1. Hermit copies the template from `mcp/templates/<server>.yml` to `mcp/enabled/<server>.yml`
 2. The enabled file is dynamically included in docker compose (via compose_cmd helper)
-3. Server's internal hostname (`mcp-<server>`) is added to the proxy allowlist
-4. Server is registered in `~/.claude.json` under `mcpServers`
-5. The runtime workspace override is rewritten, tinyproxy (allowlist is baked into its image) and the server image are built, and `up -d tinyproxy mcp-*` runs
+3. Server's internal hostname (`mcp-<server>`) is added to the proxy allowlist (baked into tinyproxy image at build time)
+4. Server is registered in `$HERMIT_CONFIG_DIR/claude.json` (default `~/.hermit/claude.json`) as `{"type": "http", "url": ...}`
+5. The runtime workspace override is rewritten, tinyproxy and the server image are built, and `docker compose up -d tinyproxy mcp-*` runs
 
 Set `HERMIT_NO_REBUILD=1` to skip step 5 (used by tests/scripts).
 
