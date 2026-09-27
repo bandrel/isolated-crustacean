@@ -51,7 +51,7 @@ On macOS: `brew install jq yq bats-core`.
 
 ### Authentication
 
-Claude Code configuration is stored in an isolated container directory (`~/.hermit/claude`) **not** shared with your host — this prevents a compromised container from modifying your host configuration.
+Claude Code configuration is stored in an isolated container directory (`/home/node/.claude`), saved on the host at `~/.hermit/claude` — **not** shared with your host's `~/.claude` — which prevents a compromised container from modifying your host configuration.
 
 You have three options to authenticate:
 
@@ -59,11 +59,11 @@ You have three options to authenticate:
 
 ```bash
 ./hermit start
-# Inside the container:
-claude --login
+# Inside Claude:
+/login
 ```
 
-This opens an OAuth URL to authenticate. Your credentials are stored inside the container under `~/.hermit/claude` and persisted across sessions.
+This opens an OAuth URL to authenticate. Your credentials are stored on the host at `~/.hermit/claude`, mounted into the container at `/home/node/.claude`, and persisted across sessions.
 
 **Option 2: Use a token from the host**
 

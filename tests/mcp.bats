@@ -45,6 +45,7 @@ setup() {
 teardown() {
     mv "$ALLOWLIST_FILE.bak" "$ALLOWLIST_FILE"
     rm -f "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml
+    rm -f "$COMPOSE_PROJECT_DIR"/mcp/templates/test-hyphen.yml
 }
 
 @test "all templates reference the ic-internal network" {
@@ -171,10 +172,10 @@ teardown() {
 @test "docker compose config uses HERMIT_CONFIG_DIR for mounts" {
     run docker compose -f "$COMPOSE_PROJECT_DIR/docker-compose.yml" config
     [ "$status" -eq 0 ]
-    # Should contain HERMIT_CONFIG_DIR paths
-    [[ "$output" == *"$HERMIT_CONFIG_DIR/claude"* ]]
-    # Should NOT contain the host's HOME directory as mount source
-    ! grep -q "${HOME}/.claude:" <<<"$output"
+    # Should contain HERMIT_CONFIG_DIR paths in long-form volume source
+    grep -q "source: ${HERMIT_CONFIG_DIR}/claude" <<<"$output"
+    # Should NOT contain the host's HOME directory as mount source (long-form)
+    ! grep -q "source: ${HOME}/.claude" <<<"$output"
 }
 
 @test "mcp add does not modify host ~/.claude.json" {
@@ -183,14 +184,14 @@ teardown() {
     [[ -f "$_host_json" ]] || skip "host ~/.claude.json not present"
 
     # Capture checksum before
-    _checksum_before="$(md5sum "$_host_json" | awk '{print $1}')"
+    _checksum_before="$(shasum -a 256 "$_host_json" | awk '{print $1}')"
 
     # Run mcp add with HERMIT_NO_REBUILD
     HERMIT_NO_REBUILD=1 run "$HERMIT" mcp add filesystem
     [ "$status" -eq 0 ]
 
     # Checksum should be identical (host file untouched)
-    _checksum_after="$(md5sum "$_host_json" | awk '{print $1}')"
+    _checksum_after="$(shasum -a 256 "$_host_json" | awk '{print $1}')"
     [ "$_checksum_before" = "$_checksum_after" ]
 }
 
@@ -227,7 +228,4 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"MCP allowlist: mcp-test-hyphen"* ]]
     [[ "$output" == *"MCP config: test-hyphen"* ]]
-
-    # Cleanup
-    rm -f "$_temp_tmpl"
 }
