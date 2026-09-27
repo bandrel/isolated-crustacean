@@ -56,6 +56,11 @@ load test_helper
     [ "$output" = "403" ]
 }
 
+@test "sentry.io is blocked via proxy" {
+    run run_in_container "curl -s -o /dev/null -w '%{http_connect}' --max-time 10 https://foo.sentry.io"
+    [ "$output" = "403" ]
+}
+
 # --- Regex edge cases ---
 
 @test "exact match rejects prefix mismatch" {

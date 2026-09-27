@@ -10,6 +10,7 @@ services:
       - https_proxy=http://tinyproxy:8888
       - ANTHROPIC_API_KEY
       - CLAUDE_CODE_OAUTH_TOKEN
+      - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
     networks:
       - internal
     volumes:

@@ -2,9 +2,6 @@
 ^console\.anthropic\.com$
 ^platform\.claude\.com$
 ^claude\.ai$
-^statsig\.anthropic\.com$
-^statsig\.com$
-^(.+\.)?sentry\.io$
 ^registry\.npmjs\.org$
 ^(.+\.)?github\.com$
 ^(.+\.)?githubusercontent\.com$
