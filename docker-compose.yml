@@ -16,12 +16,33 @@ services:
       - ${HOST_HOME:-.}/.claude.json:/home/node/.claude.json
     depends_on:
       - tinyproxy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/node/.cache
+      - /home/node/.npm
+      - /home/node/.config
+    pids_limit: 512
 
   tinyproxy:
     build: ./tinyproxy
     networks:
       - internal
       - external
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/log/tinyproxy
+      - /var/run/tinyproxy
+    pids_limit: 100
 
 networks:
   internal:
