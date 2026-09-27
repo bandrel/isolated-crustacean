@@ -71,8 +71,22 @@ teardown() {
     [[ "$stderr" == *"Error: refusing to mount"* ]]
 }
 
+@test "--mount refuses subdirectories of the checkout" {
+    # A writable mcp/ or tinyproxy/ would let the container drop an enabled
+    # compose file or edit the allowlist that the host loads next run.
+    for _sub in mcp tinyproxy tests; do
+        run --separate-stderr "$HERMIT" mcp sync-workspace --mount "$COMPOSE_PROJECT_DIR/$_sub"
+        [ "$status" -eq 1 ]
+        [[ "$stderr" == *"Error: refusing to mount"* ]]
+    done
+    run --separate-stderr "$HERMIT" start --mount "$COMPOSE_PROJECT_DIR/mcp"
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"Error: refusing to mount"* ]]
+    [ ! -f "$_ws_override" ]
+}
+
 @test "--mount of an unrelated temp directory is accepted" {
-    # Only ancestors (and the checkout itself) are refused
+    # Only the checkout, its ancestors, and its subdirectories are refused
     run "$HERMIT" mcp sync-workspace --mount "$BATS_TEST_TMPDIR"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Workspace: bind mount"* ]]

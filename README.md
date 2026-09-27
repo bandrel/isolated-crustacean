@@ -245,7 +245,7 @@ internet either way.
 ./hermit start --mount /path/to/project
 ```
 
-This mounts the host directory at `/home/node/workspace` inside the container instead of using the default Docker volume. The mount is read-write. `hermit` refuses to mount its own checkout or any directory containing it (see [What It Does NOT Guarantee](#what-it-does-not-guarantee)).
+This mounts the host directory at `/home/node/workspace` inside the container instead of using the default Docker volume. The mount is read-write. `hermit` refuses to mount its own checkout, any directory containing it, or any directory inside it (see [What It Does NOT Guarantee](#what-it-does-not-guarantee)).
 
 ### Copy files into the workspace
 
@@ -339,7 +339,7 @@ Note: Claude Code disables nonessential traffic with `CLAUDE_CODE_DISABLE_NONESS
   - **registry.npmjs.org**: Publishing packages
   - **`fetch` MCP server** (if enabled): another HTTP client that reaches allowlisted hosts via tinyproxy. It adds no new destinations, so the bound is the same, but it is one more way to send data to them.
 - **Allowlist as destination boundary, not data boundary**: The allowlist restricts *where* the container can connect, not *what data* it can send. A malicious prompt injection or supply chain attack could exfiltrate credentials or conversation content to any of these services.
-- **`--mount` directories are fully writable**: Everything under `./hermit start --mount <path>` is read-write from the container. Never mount this repository or a directory containing it — a compromised container could rewrite `hermit`, the compose files, the allowlist, or `mcp/enabled/` and gain code execution on the host the next time you run `./hermit`. `hermit` refuses these paths, but it cannot recognise other sensitive directories (your home directory, dotfiles, other tools' checkouts); mount only the project you intend Claude to edit.
+- **`--mount` directories are fully writable**: Everything under `./hermit start --mount <path>` is read-write from the container. Never mount this repository, a directory containing it, or any of its subdirectories — a compromised container could rewrite `hermit`, the compose files, the allowlist, or `mcp/enabled/` and gain code execution on the host the next time you run `./hermit`. `hermit` refuses these paths, but it cannot recognise other sensitive directories (your home directory, dotfiles, other tools' checkouts); mount only the project you intend Claude to edit.
 
 ### How to Tighten This
 
