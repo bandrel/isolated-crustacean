@@ -123,21 +123,33 @@ Allowlist profiles let you save/load named configurations:
 MCP (Model Context Protocol) servers can run inside the isolated network and be accessed by Claude Code.
 
 Templates are stored in `mcp/templates/` (e.g., `filesystem.yml`). Each template defines:
-- Service configuration (image, ports, volumes)
+- Service configuration (`build:` context under `mcp/images/<name>`, `image: ic-mcp-<name>`, expose, volumes, hardening flags)
 - Network and volume references (ic-internal, ic-workspace)
-- Metadata in `x-mcp` section (name, description, transport, port, path)
+- Metadata in `x-mcp` section (name, description, transport, port, path; optional `requires_env`)
+
+Shipped templates: `filesystem`, `git`, `fetch`, `sqlite` (upstream reference servers) and `github` (official binary). All upstream servers are stdio-only, so each `mcp/images/<name>/Dockerfile` installs the pinned server package at build time and wraps it with `supergateway` (pinned) as a stdio→Streamable HTTP bridge listening on `x-mcp.port` at `x-mcp.path`. Runtime containers have no internet, so nothing may be downloaded at start. `postgres` was removed (the proxy only allows CONNECT to 443, so no database is reachable).
 
 When you run `./hermit mcp add <server>`:
 1. Hermit copies the template from `mcp/templates/<server>.yml` to `mcp/enabled/<server>.yml`
 2. The enabled file is dynamically included in docker compose (via compose_cmd helper)
 3. Server's internal hostname (`mcp-<server>`) is added to the proxy allowlist
 4. Server is registered in `~/.claude.json` under `mcpServers`
+5. The runtime workspace override is rewritten, tinyproxy (allowlist is baked into its image) and the server image are built, and `up -d tinyproxy mcp-*` runs
 
-`./hermit mcp add/rm` auto-runs `compose build` + `up -d`. Set `HERMIT_NO_REBUILD=1` to skip (used by tests/scripts).
+Set `HERMIT_NO_REBUILD=1` to skip step 5 (used by tests/scripts).
+
+### Workspace consistency for MCP servers
+
+`hermit start` writes `mcp/.runtime/workspace.yml` (git-ignored) via `sync_workspace_override`. It records `x-hermit.workspace_mode`/`workspace_source` and either renames the shared `workspace` volume key (named-volume mode) or replaces the `/home/node/workspace` and each MCP `/data` entry with a bind of the `--mount` path. `compose_cmd` appends it last so it wins the merge; claude-code and every enabled workspace-mounting MCP service therefore resolve to the same source. `mcp add/rm` reuse the currently pinned source (`current_workspace_source`) so a server added mid-session mounts what Claude is using. `hermit mcp sync-workspace [--mount <path>]` regenerates the file without starting Claude (tests use this).
+
+The override also sets `NO_PROXY`/`no_proxy` on claude-code to the enabled `mcp-*` hostnames. Claude must not reach MCP servers through tinyproxy: tinyproxy has no persistent-connection support and, after relaying a streamed SSE response, forwards the client's next keep-alive request as raw proxy-form bytes (HTTP 400 from the server). Single-request access through the proxy (what the probe tests and `^mcp-<name>$` allowlist entries cover) works; Claude's multi-request sessions do not. Registration in claude.json must be `{"type": "http", "url": ...}` — Claude Code skips url-only entries.
+
+Compose resolves relative `build:` contexts against the project directory (the first `-f` file's directory, i.e. the repo root), not the template's own directory — so templates must use `./mcp/images/<name>` and `build_mcp_images` passes `--project-directory`.
 
 To add a new MCP server template:
-1. Create `mcp/templates/<name>.yml` with the compose service definition
-2. Include required `x-mcp` metadata with `name:`, `port:`, `path:` keys indented exactly two spaces — `hermit mcp add` parses them by grepping (`grep '  name:'` etc.), so indentation matters
-3. Name the service `mcp-<name>` — the allowlist pattern and registered URL (`http://mcp-<name>:<port><path>`) both assume this
-4. Reference the `ic-internal` network (external: true) and `ic-workspace` volume (external: true)
-5. Users can then enable it with `./hermit mcp add <name>`
+1. Create `mcp/images/<name>/Dockerfile` that installs the server at build time (pinned) and runs `supergateway --stdio "<cmd>" --outputTransport streamableHttp --port <port> --streamableHttpPath /mcp`
+2. Create `mcp/templates/<name>.yml` with `build: ./mcp/images/<name>`, `image: ic-mcp-<name>`, and the same hardening flags as the other templates
+3. Include required `x-mcp` metadata (`name`, `description`, `transport`, `port`, `path`); parsed with yq via `mcp_meta`. Add `requires_env: VAR` if the server needs a host env var (`mcp add` warns when it is unset)
+4. Name the service `mcp-<name>` — the allowlist pattern and registered URL (`http://mcp-<name>:<port><path>`) both assume this
+5. Reference the `ic-internal` network (external: true); mount the workspace as `workspace:/data` and declare the `workspace` volume (name ic-workspace, external: true) if the server needs files
+6. Users can then enable it with `./hermit mcp add <name>`; the `every shipped MCP template initializes through proxy` test in `tests/mcp.bats` will cover it automatically

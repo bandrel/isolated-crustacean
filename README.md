@@ -116,12 +116,44 @@ Enable Claude with access to MCP (Model Context Protocol) servers running inside
 
 When you add a server, hermit automatically:
 - Copies the server template to `mcp/enabled/`
-- Adds the server's internal hostname to the proxy allowlist
+- Adds the server's internal hostname to the proxy allowlist and rebuilds tinyproxy
 - Configures the server in the container's isolated `~/.claude.json` (stored in `~/.hermit/claude.json` on the host)
+- Builds the server image and starts it on the isolated network
 
-Available MCP server templates (see `mcp/templates/` for full list):
+Available MCP server templates (see `mcp/templates/`):
 
-- `filesystem` - read/write access to the shared workspace volume
+| Template | What it is | Notes |
+|---|---|---|
+| `filesystem` | Upstream reference server (`@modelcontextprotocol/server-filesystem`) | Serves the workspace at `/data` |
+| `git` | Upstream reference server (`mcp-server-git`) | Tools take `repo_path`, e.g. `/data/myproject` |
+| `fetch` | Upstream reference server (`mcp-server-fetch`) | Fetches go through tinyproxy, so only allowlisted HTTPS hosts work |
+| `sqlite` | Reference server, now in `servers-archived` (`mcp-server-sqlite`) | Database at `/data/sqlite.db`; pinned to `mcp==1.29.0` SDK |
+| `github` | Official `ghcr.io/github/github-mcp-server` binary | Export `GITHUB_PERSONAL_ACCESS_TOKEN` before `mcp add`/`start`; tool calls fail without it |
+
+The upstream servers only speak stdio, so each template builds a local image
+(`mcp/images/<name>/Dockerfile`) that installs the pinned server package at
+build time and wraps it with [supergateway](https://github.com/supercorp-ai/supergateway)
+as a stdio-to-Streamable-HTTP bridge. Runtime containers have no internet
+access, so nothing is downloaded when they start.
+
+The `postgres` template was removed: tinyproxy only allows `CONNECT` to port
+443, so a database server can never be reached from the isolated network.
+
+MCP servers that mount the workspace at `/data` always see the same files as
+Claude Code. `hermit start` writes `mcp/.runtime/workspace.yml` (git-ignored)
+pinning the active named workspace, or the `--mount` path, for claude-code
+and every enabled MCP service, then (re)creates the MCP containers before
+launching Claude. `hermit mcp sync-workspace [--mount <path>]` regenerates
+that file on demand.
+
+That same file sets `NO_PROXY` on claude-code to the enabled `mcp-*`
+hostnames, so Claude talks to MCP servers directly over the isolated
+`ic-internal` network rather than through tinyproxy. tinyproxy does not
+support persistent client connections: after relaying a streamed (SSE)
+MCP response it forwards the client's next keep-alive request verbatim,
+which the server rejects with HTTP 400. Bypassing the proxy for these
+internal names does not widen egress; the container has no route to the
+internet either way.
 
 
 ### Start Claude
