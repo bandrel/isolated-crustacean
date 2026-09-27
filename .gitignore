@@ -4,3 +4,4 @@
 .hermit-workspace
 mcp/enabled/*
 !mcp/enabled/.gitkeep
+mcp/.runtime/

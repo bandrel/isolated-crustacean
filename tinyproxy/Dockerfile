@@ -6,8 +6,10 @@ RUN apk add --no-cache tinyproxy \
     && mkdir -p /var/run/tinyproxy \
     && chown nobody:nogroup /var/run/tinyproxy
 
-COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
-COPY allowlist /etc/tinyproxy/allowlist
+# --chmod: tinyproxy runs as 'nobody' and exits 65 ("filter file: Permission
+# denied") if the host copy of these files happens to be 0600.
+COPY --chmod=0644 tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
+COPY --chmod=0644 allowlist /etc/tinyproxy/allowlist
 
 USER nobody
 
