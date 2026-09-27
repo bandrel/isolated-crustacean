@@ -126,7 +126,7 @@ All services in `docker-compose.yml` and MCP service templates are hardened with
 - `cap_drop: [ALL]` - no Linux capabilities (most restrictive baseline)
 - `security_opt: [no-new-privileges:true]` - prevent privilege escalation via setuid/setgid
 - `read_only: true` - immutable filesystem (except tmpfs mounts)
-- `tmpfs` with writable scratch space (specific paths set in `docker-compose.yml` per service, e.g., `/tmp`, `/home/node/.cache`, `/var/log/tinyproxy`, `/var/run/tinyproxy`)
+- `tmpfs` with writable scratch space (specific paths set in `docker-compose.yml` per service, e.g., `/tmp`, `/home/node/.cache`, `/var/run/tinyproxy`)
 - `pids_limit: 512` (or 100–256 depending on workload) - prevent fork bombs
 
 These are specified in `docker-compose.yml` at the service level, not in Dockerfiles (tmpfs cannot be set in images).
