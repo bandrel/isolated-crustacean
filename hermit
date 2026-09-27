@@ -122,10 +122,10 @@ case "${1:-}" in
         compose_cmd run --rm "${_run_args[@]+"${_run_args[@]}"}" claude-code
         ;;
     build)
-        compose_cmd build
+        compose_cmd --profile probe build
         ;;
     rebuild)
-        compose_cmd build
+        compose_cmd --profile probe build
         compose_cmd up -d tinyproxy
         ;;
     logs)
@@ -341,7 +341,7 @@ case "${1:-}" in
         fi
 
         printf "%-40s" "Checking DNS resolution..."
-        if compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c "dig +short tinyproxy" 2>/dev/null | grep -q .; then
+        if compose_cmd --profile probe run --rm --no-deps -T --entrypoint bash probe -c "dig +short tinyproxy" 2>/dev/null | grep -q .; then
             echo "PASS"
             _pass=$((_pass + 1))
         else
@@ -351,7 +351,7 @@ case "${1:-}" in
 
         printf "%-40s" "Checking allowed domain reachable..."
         _curl_fmt='%{http_code}'
-        _http_code="$(compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c \
+        _http_code="$(compose_cmd --profile probe run --rm --no-deps -T --entrypoint bash probe -c \
             "curl -s -o /dev/null -w '$_curl_fmt' --max-time 10 https://api.anthropic.com" 2>/dev/null || echo "000")"
         if [[ "$_http_code" != "000" ]]; then
             echo "PASS (HTTP $_http_code)"
@@ -362,13 +362,13 @@ case "${1:-}" in
         fi
 
         printf "%-40s" "Checking blocked domain denied..."
-        _block_code="$(compose_cmd run --rm --no-deps -T --entrypoint bash claude-code -c \
-            "curl -s -o /dev/null -w '$_curl_fmt' --max-time 10 https://google.com" 2>/dev/null || echo "000")"
-        if [[ "$_block_code" == "403" ]] || [[ "$_block_code" == "000" ]]; then
-            echo "PASS (HTTP $_block_code)"
+        _block_code="$(compose_cmd --profile probe run --rm --no-deps -T --entrypoint bash probe -c \
+            "curl -s -o /dev/null -w '%{http_connect}' --max-time 10 https://google.com" 2>/dev/null || echo "000")"
+        if [[ "$_block_code" == "403" ]]; then
+            echo "PASS (HTTP CONNECT $_block_code)"
             _pass=$((_pass + 1))
         else
-            echo "FAIL (google.com returned HTTP $_block_code, expected 403)"
+            echo "FAIL (google.com returned HTTP CONNECT $_block_code, expected 403)"
             _fail=$((_fail + 1))
         fi
 

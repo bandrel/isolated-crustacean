@@ -10,16 +10,22 @@ for f in "$COMPOSE_PROJECT_DIR"/mcp/enabled/*.yml; do
     [[ -e "$f" ]] && COMPOSE_FILES+=(-f "$f")
 done
 
-# Run a command inside the claude-code container with proxy env vars intact
+# Run a command inside the probe container with proxy env vars intact
 run_in_container() {
-    docker compose "${COMPOSE_FILES[@]}" \
-        run --rm --no-deps -T --entrypoint bash claude-code -c "$1" 2>/dev/null
+    docker compose "${COMPOSE_FILES[@]}" --profile probe \
+        run --rm --no-deps -T --entrypoint bash probe -c "$1" 2>/dev/null
 }
 
-# Run a command inside the claude-code container with proxy env vars stripped
+# Run a command inside the probe container with proxy env vars stripped
 run_in_container_no_proxy() {
-    docker compose "${COMPOSE_FILES[@]}" \
+    docker compose "${COMPOSE_FILES[@]}" --profile probe \
         run --rm --no-deps -T --entrypoint bash \
         -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
-        claude-code -c "$1" 2>/dev/null
+        probe -c "$1" 2>/dev/null
+}
+
+# Run a command inside the claude-code container with proxy env vars intact
+run_in_claude_container() {
+    docker compose "${COMPOSE_FILES[@]}" \
+        run --rm --no-deps -T --entrypoint bash claude-code -c "$1" 2>/dev/null
 }

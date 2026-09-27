@@ -44,6 +44,27 @@ services:
       - /var/run/tinyproxy
     pids_limit: 100
 
+  probe:
+    build: ./probe
+    profiles: ["probe"]
+    environment:
+      - HTTP_PROXY=http://tinyproxy:8888
+      - HTTPS_PROXY=http://tinyproxy:8888
+      - http_proxy=http://tinyproxy:8888
+      - https_proxy=http://tinyproxy:8888
+    networks:
+      - internal
+    depends_on:
+      - tinyproxy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 512
+
 networks:
   internal:
     name: ic-internal
