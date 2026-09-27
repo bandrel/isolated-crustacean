@@ -25,7 +25,7 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 - `hermit` - CLI wrapper for all common operations (workspace, MCP, allowlist, compose helpers)
 - `docker-compose.yml` - service definitions, network topology, volume mounts for claude-code, tinyproxy, and probe
 - `claude-code/Dockerfile` - Claude Code container image (node:24-bookworm-slim + git + claude-code CLI). Installs Claude Code at a pinned version via ARG CLAUDE_CODE_VERSION.
-- `tinyproxy/Dockerfile` - proxy container image (alpine:3.22 + tinyproxy). Runs as nobody; logs to stderr (visible via `hermit logs`); `/var/run/tinyproxy` is a tmpfs because the root filesystem is read-only.
+- `tinyproxy/Dockerfile` - proxy container image (alpine:3.22 + tinyproxy). Runs as nobody; logs to stdout (visible via `hermit logs`); `/var/run/tinyproxy` is a tmpfs because the root filesystem is read-only.
 - `tinyproxy/tinyproxy.conf` - proxy config: `FilterDefaultDeny Yes`, `FilterType ere`, `ConnectPort 443`. Restricts CONNECT to 443 only. Plain-HTTP forwarding is not port-restricted; probe uses this for single-request connectivity tests.
 - `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line), baked into the tinyproxy image at build time.
 - `probe/Dockerfile` - test harness container image (debian:bookworm-slim + curl + dnsutils). Runs commands that `tests/*.bats` and `./hermit doctor` invoke via `compose_cmd run --rm probe`.
