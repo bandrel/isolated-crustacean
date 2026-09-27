@@ -4,6 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+require_yq() {
+    if ! command -v yq &>/dev/null; then
+        echo "Error: yq is required (brew install yq)" >&2
+        exit 1
+    fi
+}
+
+# Every command except usage/help ends up in compose_cmd or an MCP template
+# read, both of which parse YAML with yq, so fail early with one clear message.
+case "${1:-}" in
+    ""|help|-h|--help) ;;
+    *) require_yq ;;
+esac
+
 export HERMIT_CONFIG_DIR="${HERMIT_CONFIG_DIR:-$HOME/.hermit}"
 mkdir -p "$HERMIT_CONFIG_DIR/claude"
 if [[ ! -f "$HERMIT_CONFIG_DIR/claude.json" ]] || [[ ! -s "$HERMIT_CONFIG_DIR/claude.json" ]]; then
@@ -222,10 +236,7 @@ build_mcp_images() {
 # Read a scalar at a dotted yq path from a YAML file (empty if absent)
 mcp_meta_key() {
     local file="$1" path="$2"
-    if ! command -v yq &>/dev/null; then
-        echo "Error: yq not found. Install with: brew install yq" >&2
-        exit 1
-    fi
+    require_yq
     local val
     val="$(yq -r ".${path} // \"\"" "$file")"
     [[ "$val" == "null" ]] && val=""
@@ -573,7 +584,8 @@ case "${1:-}" in
             echo "PASS"
             _pass=$((_pass + 1))
         else
-            echo "WARN (yq not found; mcp commands will fail)"
+            echo "FAIL (yq not found; hermit requires it: brew install yq)"
+            _fail=$((_fail + 1))
         fi
 
         printf "%-40s" "Checking proxy container..."
