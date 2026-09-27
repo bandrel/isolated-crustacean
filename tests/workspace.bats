@@ -6,6 +6,8 @@ load test_helper
 
 _test_vol_prefix="hermittest"
 _hermit_workspace_bak=""
+_non_ws_vol=""
+_ws_override="$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml"
 
 setup() {
     _test_name="${_test_vol_prefix}-$$-${BATS_TEST_NUMBER}"
@@ -15,17 +17,28 @@ setup() {
     else
         _hermit_workspace_bak=""
     fi
+    # Preserve any runtime override the user has; tests below create their own
+    rm -f "$_ws_override.bak"
+    [[ -f "$_ws_override" ]] && cp "$_ws_override" "$_ws_override.bak"
+    return 0
 }
 
 teardown() {
     # Clean up any test volumes (both isolated-crustacean- and isolated-crustaion- with anchored filters)
     docker volume ls --filter "name=^isolated-crustacean-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
     docker volume ls --filter "name=^isolated-crustaion-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
+    # Underscore-named decoy volume (not matched by the anchored filters above)
+    [[ -n "$_non_ws_vol" ]] && docker volume rm "$_non_ws_vol" >/dev/null 2>&1 || true
     # Restore .hermit-workspace if it existed before
     if [[ -n "$_hermit_workspace_bak" ]]; then
         echo "$_hermit_workspace_bak" > "$COMPOSE_PROJECT_DIR/.hermit-workspace"
     else
         rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
+    fi
+    if [[ -f "$_ws_override.bak" ]]; then
+        mv "$_ws_override.bak" "$_ws_override"
+    else
+        rm -f "$_ws_override"
     fi
 }
 
@@ -166,9 +179,38 @@ teardown() {
 
     run "$HERMIT" workspace list
     [ "$status" -eq 0 ]
-    # Non-workspace volume should not appear in list
+    # Non-workspace volume should not appear in list (removed in teardown)
     [[ ! "$output" =~ $_non_ws_vol ]]
+}
 
-    # Clean up the non-workspace volume
-    docker volume rm "$_non_ws_vol"
+@test "workspace switch repins an existing runtime override to the new volume" {
+    "$HERMIT" workspace create "$_test_name"
+    # Override pinned to the default volume (as hermit start would leave it)
+    rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
+    "$HERMIT" mcp sync-workspace
+    [ "$(yq -r '.volumes.workspace.name' "$_ws_override")" = "ic-workspace" ]
+    run "$HERMIT" workspace switch "$_test_name"
+    [ "$status" -eq 0 ]
+    [ "$(yq -r '.volumes.workspace.name' "$_ws_override")" = "isolated-crustacean-${_test_name}" ]
+    # exec/shell use hermit's compose set, so the resolved mount follows too
+    [ "$(workspace_mount_source claude-code /home/node/workspace)" = "isolated-crustacean-${_test_name}" ]
+}
+
+@test "workspace switch leaves things alone when no runtime override exists" {
+    "$HERMIT" workspace create "$_test_name"
+    rm -f "$_ws_override"
+    run "$HERMIT" workspace switch "$_test_name"
+    [ "$status" -eq 0 ]
+    [ ! -f "$_ws_override" ]
+}
+
+@test "workspace rm of the active workspace repins the override to ic-workspace" {
+    "$HERMIT" workspace create "$_test_name"
+    "$HERMIT" workspace switch "$_test_name"
+    "$HERMIT" mcp sync-workspace
+    [ "$(yq -r '.volumes.workspace.name' "$_ws_override")" = "isolated-crustacean-${_test_name}" ]
+    run bash -c "echo y | '$HERMIT' workspace rm '$_test_name'"
+    [ "$status" -eq 0 ]
+    [ ! -f "$COMPOSE_PROJECT_DIR/.hermit-workspace" ]
+    [ "$(yq -r '.volumes.workspace.name' "$_ws_override")" = "ic-workspace" ]
 }

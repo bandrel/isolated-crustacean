@@ -710,6 +710,11 @@ case "${1:-}" in
                 fi
                 echo "$_ws_name" > "$SCRIPT_DIR/.hermit-workspace"
                 echo "Switched to workspace: $_ws_name"
+                # The runtime override pins whatever workspace was active when
+                # it was written; repin it so exec/shell/MCP follow the switch.
+                if [[ -e "$WS_OVERRIDE" ]]; then
+                    sync_workspace_override
+                fi
                 ;;
             rm)
                 shift
@@ -730,6 +735,11 @@ case "${1:-}" in
                     echo "Removed workspace: $_ws_name"
                     if [[ -f "$SCRIPT_DIR/.hermit-workspace" ]] && [[ "$(cat "$SCRIPT_DIR/.hermit-workspace")" == "$_ws_name" ]]; then
                         rm "$SCRIPT_DIR/.hermit-workspace"
+                        # Active workspace is gone: repin the override to the
+                        # default volume instead of leaving it on a removed one
+                        if [[ -e "$WS_OVERRIDE" ]]; then
+                            sync_workspace_override
+                        fi
                     fi
                 else
                     echo "Cancelled"
