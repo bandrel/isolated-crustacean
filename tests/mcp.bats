@@ -156,7 +156,10 @@ teardown() {
     grep -v 'mcp-filesystem' "$ALLOWLIST_FILE" > "$_tmpfile" || true
     mv "$_tmpfile" "$ALLOWLIST_FILE"
     run "$HERMIT" doctor
-    [[ "$output" == *"FAIL"*"mcp-filesystem"* ]]
+    # Doctor should report FAIL with mcp-filesystem in the same line
+    [[ "$output" == *"mcp-filesystem"*"FAIL"* ]]
+    # Doctor should exit non-zero when there's an inconsistency
+    [ "$status" -ne 0 ]
 }
 
 @test "enabled MCP server is reachable through proxy" {
