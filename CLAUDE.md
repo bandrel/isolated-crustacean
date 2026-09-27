@@ -14,9 +14,9 @@ Isolated Crustacean runs Claude Code inside a network-isolated Docker container 
 
 Three Docker containers on two networks:
 
-- **claude-code** (node:24-bookworm-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy. Connected only to the `internal` network (no default gateway, no direct internet). Container runs as the fixed `node` user with `WORKDIR /home/node/workspace`. The workspace is a named Docker volume (`ic-workspace`, git-ignored override via `mcp/.runtime/workspace.yml`); `~/.claude/` and `~/.claude.json` are bind-mounted from `$HERMIT_CONFIG_DIR` (default `~/.hermit/`) on the host into `/home/node/` for persistent auth/config.
-- **tinyproxy** (alpine:3.22) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Restricts CONNECT requests to port 443 only. Plain-HTTP forwarding (not port-restricted) is used by MCP servers and the probe test harness to reach allowlisted hosts. No TLS interception — it cannot read API keys or conversation content.
-- **probe** (debian:bookworm-slim) - isolation verification test harness, runs in profile "probe". Used by `./hermit test` and `./hermit doctor` to verify proxy connectivity and DNS behavior.
+- **claude-code** (node:24-bookworm-slim) - runs Claude Code CLI with `HTTP(S)_PROXY` pointed at tinyproxy, but the actual enforcement boundary is the network: connected only to the `internal` network (marked `internal: true`, which has no default gateway, so no direct internet route exists regardless of proxy env vars). Container runs as the fixed `node` user with `WORKDIR /home/node/workspace`. The workspace is a named Docker volume (`ic-workspace`, git-ignored override via `mcp/.runtime/workspace.yml`); `~/.claude/` and `~/.claude.json` are bind-mounted from `$HERMIT_CONFIG_DIR` (default `~/.hermit/`) on the host into `/home/node/` for persistent auth/config.
+- **tinyproxy** (alpine:3.22) - allowlist-filtering forward proxy on port 8888. Connected to both `internal` and `external` networks. Explicit forward proxy (not transparent/MITM). Restricts CONNECT requests to port 443 only. Plain-HTTP forwarding (not port-restricted) allows probe to reach allowlisted hosts via HTTP. No TLS interception — it cannot read API keys or conversation content.
+- **probe** (debian:bookworm-slim) - isolation verification test harness, runs in profile "probe". Used by `./hermit test` and `./hermit doctor` to verify proxy connectivity and DNS behavior via curl/dnsutils.
 
 The `internal` network is marked `internal: true` (no gateway). The `external` network is a standard bridge with internet access.
 
@@ -26,7 +26,7 @@ The `internal` network is marked `internal: true` (no gateway). The `external` n
 - `docker-compose.yml` - service definitions, network topology, volume mounts for claude-code, tinyproxy, and probe
 - `claude-code/Dockerfile` - Claude Code container image (node:24-bookworm-slim + git + claude-code CLI). Installs Claude Code at a pinned version via ARG CLAUDE_CODE_VERSION.
 - `tinyproxy/Dockerfile` - proxy container image (alpine:3.22 + tinyproxy). Runs as nobody:nogroup with tmpfs-backed logs and runtime socket dirs.
-- `tinyproxy/tinyproxy.conf` - proxy config: `FilterDefaultDeny Yes`, `FilterType ere`, `ConnectPort 443`. Restricts CONNECT to 443 only. Plain-HTTP forwarding is not port-restricted and is used by MCP and probe services.
+- `tinyproxy/tinyproxy.conf` - proxy config: `FilterDefaultDeny Yes`, `FilterType ere`, `ConnectPort 443`. Restricts CONNECT to 443 only. Plain-HTTP forwarding is not port-restricted; probe uses this for single-request connectivity tests.
 - `tinyproxy/allowlist` - anchored ERE regex patterns for allowed domains (one per line), baked into the tinyproxy image at build time.
 - `probe/Dockerfile` - test harness container image (debian:bookworm-slim + curl + dnsutils). Runs commands that `tests/*.bats` and `./hermit doctor` invoke via `compose_cmd run --rm probe`.
 - `mcp/templates/` - MCP server compose service templates (filesystem.yml, git.yml, fetch.yml, sqlite.yml, github.yml) with `x-mcp` metadata
@@ -92,14 +92,14 @@ Use the `hermit` wrapper script for all operations:
 
 ### Running tests
 
-`./hermit test` requires `bats-core`, `jq`, and `yq` on the host (`brew install bats-core jq yq`). It shells out to `bats tests/` after bringing up tinyproxy and the probe service. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash`:
-- `run_in_container <cmd>` - run command in claude-code with proxy env set
-- `run_in_container_no_proxy <cmd>` - run command in claude-code without proxy env
-- `run_in_claude_container <cmd>` - run command in claude-code (alias for run_in_container)
+`./hermit test` requires `bats-core`, `jq`, and `yq` on the host (`brew install bats-core jq yq`). It shells out to `bats tests/` after bringing up tinyproxy; probe service runs per test. To run a single suite: `bats tests/isolation.bats` (also `mcp.bats`, `allowlist.bats`, `doctor.bats`, `exec.bats`, `logs.bats`, `mount.bats`, `workspace.bats`). Shared helpers live in `tests/test_helper.bash`:
+- `run_in_container <cmd>` - run command in probe container with proxy env set
+- `run_in_container_no_proxy <cmd>` - run command in probe container without proxy env
+- `run_in_claude_container <cmd>` - run command in claude-code container with proxy env set
 
 ### Workspace selection
 
-Workspaces are Docker named volumes with a prefix for isolation: `isolated-crustacean-<name>` for new volumes. The script supports a legacy prefix `isolated-crustaion-<name>` (note the typo) for backward compatibility and migrates it when needed.
+Workspaces are Docker named volumes with a prefix for isolation: `isolated-crustacean-<name>` for new volumes. The script supports a legacy prefix `isolated-crustaion-<name>` (note the typo) as a fallback for backward compatibility; existing volumes with the legacy prefix are still recognized and can be switched to.
 
 `./hermit workspace switch <name>` writes the name to `.hermit-workspace` in the repo root. `./hermit start` reads that file to determine which named volume to use; if the file is absent, the default `ic-workspace` volume is used. `--mount <path>` overrides both, binding the host directory instead.
 
@@ -117,6 +117,19 @@ docker compose logs tinyproxy
 docker compose ps
 docker compose down
 ```
+
+## Hardening
+
+The `hermit` script uses `set -euo pipefail` for defensive shell behavior (error on undefined vars, unpiped command failures, set operations).
+
+All services in `docker-compose.yml` and MCP service templates are hardened with:
+- `cap_drop: [ALL]` - no Linux capabilities (most restrictive baseline)
+- `security_opt: [no-new-privileges:true]` - prevent privilege escalation via setuid/setgid
+- `read_only: true` - immutable filesystem (except tmpfs mounts)
+- `tmpfs: [/tmp, /home/*/.cache, /home/*/.npm, /home/*/.config, /var/log/*, /var/run/*]` - writable scratch space
+- `pids_limit: 256` (or 100–512 depending on workload) - prevent fork bombs
+
+These are specified in `docker-compose.yml` at the service level, not in Dockerfiles (tmpfs cannot be set in images).
 
 ## Allowlist
 

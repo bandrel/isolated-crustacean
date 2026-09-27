@@ -22,26 +22,26 @@ Run Claude Code inside a network-isolated Docker container where all internet tr
 ```
 [claude-code container]          [tinyproxy container]
   - node:24-bookworm-slim          - alpine:3.22
-  - claude-code CLI                - tinyproxy
-  - HTTP(S)_PROXY set              - allowlist filtering
-  - NO direct internet             - domain allowlist
+  - claude-code CLI                - forward proxy
+  - HTTP(S)_PROXY env set          - allowlist filtering
+  - ENFORCED: no internet route    - domain allowlist
         |                                |          |
         +--- internal network (no gw) ---+          |
                                          +--- external network --- internet
 ```
 
-Three other services run on the internal network:
+The `internal` network is marked `internal: true` — it has no default gateway, so claude-code has no route to the internet regardless of proxy environment variables. Network isolation is the enforcement boundary; proxy env vars are a defense-in-depth layer.
+
+Two other services run on the internal network:
 - **probe** (debian:bookworm-slim) - isolation verification test harness, runs in profile "probe"
 - **MCP servers** - pluggable Model Context Protocol servers (filesystem, git, fetch, sqlite, github)
 
-- **internal network** (`internal: true`) - no default gateway, so claude-code cannot route to the internet
-- **external network** - standard bridge with internet access, only tinyproxy connects to it
-- **tinyproxy** bridges both networks, enforcing a domain allowlist before proxying
+The `external` network is a standard bridge with internet access; only tinyproxy connects to it. Tinyproxy bridges both networks and enforces the domain allowlist.
 
 ## Prerequisites
 
 - Docker (with `docker compose`)
-- `jq` — used by `hermit` to edit `~/.claude.json`
+- `jq` — used by `hermit` to edit `$HERMIT_CONFIG_DIR/claude.json` (default `~/.hermit/claude.json`)
 - `yq` — used by `hermit` to parse MCP template metadata
 - `bats-core` — required only for `./hermit test`
 
@@ -95,13 +95,19 @@ The container receives the token or key but **cannot access** your host's `~/.cl
 
 ## Usage
 
-### Start the environment
+### Start Claude
 
 ```bash
 ./hermit start
 ```
 
-This drops you into a bash shell inside the isolated container.
+This launches Claude Code in the isolated container.
+
+To drop into a bash shell instead:
+
+```bash
+./hermit shell
+```
 
 ### MCP Server Support
 
@@ -121,7 +127,7 @@ Enable Claude with access to MCP (Model Context Protocol) servers running inside
 When you add a server, hermit automatically:
 - Copies the server template to `mcp/enabled/`
 - Adds the server's internal hostname to the proxy allowlist and rebuilds tinyproxy
-- Configures the server in the container's isolated `~/.claude.json` (stored in `~/.hermit/claude.json` on the host)
+- Configures the server in `$HERMIT_CONFIG_DIR/claude.json` (default `~/.hermit/claude.json`)
 - Builds the server image and starts it on the isolated network
 
 Available MCP server templates (see `mcp/templates/`):
@@ -137,7 +143,7 @@ Available MCP server templates (see `mcp/templates/`):
 The upstream servers only speak stdio, so each template builds a local image
 (`mcp/images/<name>/Dockerfile`) that installs the pinned server package at
 build time and wraps it with [supergateway](https://github.com/supercorp-ai/supergateway)
-as a stdio→Streamable-HTTP bridge listening on a hardened port. Runtime containers have no internet
+as a stdio→Streamable-HTTP bridge. Runtime containers have no internet
 access, so nothing is downloaded when they start.
 
 MCP servers that mount the workspace at `/data` always see the same files as
@@ -156,16 +162,13 @@ which the server rejects with HTTP 400. Bypassing the proxy for these
 internal names does not widen egress; the container has no route to the
 internet either way.
 
-
-### Start Claude
+Once inside Claude (via `./hermit start`), run commands:
 
 ```bash
+# Interactive session
 claude
-```
 
-Or run a one-off command:
-
-```bash
+# One-off command
 claude --print "Explain this codebase"
 ```
 
@@ -236,14 +239,14 @@ This mounts the host directory at `/home/node/workspace` inside the container in
 
 ### Copy files into the workspace
 
-The workspace is a Docker-managed named volume mounted at `/home/<username>/workspace` (matching your host username). To get files in:
+The workspace is a Docker-managed named volume mounted at `/home/node/workspace` (the container runs as the `node` user). To get files in:
 
 ```bash
 # Find the container ID
 docker compose ps
 
 # Copy files in
-docker cp myfile.txt <container_id>:/home/$(whoami)/workspace/
+docker cp myfile.txt <container_id>:/home/node/workspace/
 ```
 
 ## Allowlist Customization
@@ -315,8 +318,8 @@ Note: Claude Code disables nonessential traffic with `CLAUDE_CODE_DISABLE_NONESS
 - **No direct egress**: Claude Code container has zero direct route to the internet. It can only reach external hosts via tinyproxy.
 - **Allowlist enforcement**: Only domains matching regex patterns in `tinyproxy/allowlist` are reachable. All others are rejected with HTTP 403.
 - **No DNS leakage**: The internal network has no default gateway. External hostnames do not resolve on it; only `mcp-*` internal services and tinyproxy itself are reachable by name.
-- **No TLS interception**: Tinyproxy is a transparent forward proxy, not a man-in-the-middle. It cannot read, intercept, or modify API keys, conversation content, or any other TLS-encrypted data.
-- **Isolated configuration**: Container configuration (`~/.claude/`, `~/.claude.json`) is stored in `$HERMIT_CONFIG_DIR` on the host (default `~/.hermit/`), not mounted from your host's `~/.claude`, so a compromised container cannot modify your host config.
+- **No TLS interception**: Tinyproxy is an explicit forward proxy, not a man-in-the-middle. It cannot read, intercept, or modify API keys, conversation content, or any other TLS-encrypted data.
+- **Isolated configuration**: Container configuration is stored in `$HERMIT_CONFIG_DIR` on the host (default `~/.hermit/`), not mounted from your host's `~/.claude`, so a compromised container cannot modify your host config. Auth credentials persist in this mounted directory across sessions.
 
 ### What It Does NOT Guarantee
 
@@ -331,9 +334,10 @@ Note: Claude Code disables nonessential traffic with `CLAUDE_CODE_DISABLE_NONESS
 - Remove GitHub and npm entries from `tinyproxy/allowlist` if you don't need them:
   ```bash
   ./hermit allowlist remove github.com
-  ./hermit allowlist remove npmjs.org
+  ./hermit allowlist remove registry.npmjs.org
   ./hermit rebuild
   ```
+  Note: `remove github.com` removes github.com entries but leaves `githubusercontent.com`, which is often needed for GitHub raw content. Remove that separately if desired.
 - Use allowlist profiles to switch between strict and permissive configurations:
   ```bash
   ./hermit allowlist profile save strict
@@ -373,20 +377,28 @@ Run all isolation verification checks at once:
 ./hermit test
 ```
 
-Or run individual checks manually:
+Run specific health diagnostics:
 
 ```bash
-# Should FAIL - no direct internet from claude-code container
-docker compose run --rm claude-code -c "curl -s --max-time 5 https://google.com"
+./hermit doctor
+```
+
+To manually verify isolation using the probe container (which has curl and dnsutils):
+
+```bash
+# Should FAIL - no internet from internal network
+docker compose --profile probe run --rm --no-deps -T --entrypoint bash probe -c \
+  "curl -s --max-time 5 https://google.com 2>&1 | head -1"
 
 # Should be REJECTED by proxy (403)
-docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://google.com"
+HERMIT_CONFIG_DIR="$HOME/.hermit" docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
+  -e HTTP_PROXY=http://tinyproxy:8888 -e HTTPS_PROXY=http://tinyproxy:8888 \
+  probe -c "curl -s https://evil.com"
 
-# Should SUCCEED - allowed domain
-docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://api.anthropic.com"
-
-# Check proxy logs
-./hermit logs
+# Should SUCCEED - allowed domain via proxy
+HERMIT_CONFIG_DIR="$HOME/.hermit" docker compose --profile probe run --rm --no-deps -T --entrypoint bash \
+  -e HTTP_PROXY=http://tinyproxy:8888 -e HTTPS_PROXY=http://tinyproxy:8888 \
+  probe -c "curl -s https://api.anthropic.com | head -1"
 ```
 
 ## Security Properties
@@ -394,7 +406,7 @@ docker compose run --rm claude-code -c "curl -x http://tinyproxy:8888 https://ap
 - Claude Code has zero direct internet access (enforced at Docker network layer)
 - Tinyproxy cannot read API keys or conversation content (no TLS interception)
 - Docker socket is never mounted (prevents container escape)
-- Container configuration (`~/.claude/`, `~/.claude.json`) is isolated from the host — stored in `~/.hermit/` on the host, never shared directly into the container (prevents compromised container from modifying host config)
-- Auth tokens and API keys are passed through environment variables, not mounted files (container-to-host isolation)
+- Container configuration is isolated from the host — stored in `$HERMIT_CONFIG_DIR` on the host (default `~/.hermit/`), not your `~/.claude`, preventing a compromised container from modifying your host config
+- OAuth credentials are persisted in the mounted config directory, not passed via environment variables
 - Works on both macOS and Linux hosts
 - Allowlist uses anchored regex to prevent subdomain spoofing
