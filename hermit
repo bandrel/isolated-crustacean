@@ -38,12 +38,12 @@ ws_volume() {
     local _legacy_vol="${WS_LEGACY_PREFIX}-${_name}"
 
     if docker volume inspect "$_new_vol" &>/dev/null; then
-        printf '%s' "$_new_vol"
+        printf '%s\n' "$_new_vol"
     elif docker volume inspect "$_legacy_vol" &>/dev/null; then
-        printf '%s' "$_legacy_vol" >&1
+        printf '%s\n' "$_legacy_vol"
         echo "Note: using legacy workspace volume '$_legacy_vol' (created before the prefix rename)" >&2
     else
-        printf '%s' "$_new_vol"
+        printf '%s\n' "$_new_vol"
     fi
 }
 
@@ -54,7 +54,7 @@ workspace_volume() {
         validate_name "$_ws_name" "workspace name"
         ws_volume "$_ws_name"
     else
-        printf '%s' "ic-workspace"
+        printf '%s\n' "ic-workspace"
     fi
 }
 
@@ -446,7 +446,7 @@ case "${1:-}" in
         _ws_subcmd="${1:-list}"
         case "$_ws_subcmd" in
             list)
-                docker volume ls --filter "name=${WS_PREFIX}" --filter "name=${WS_LEGACY_PREFIX}" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
+                docker volume ls --filter "name=^${WS_PREFIX}-" --filter "name=^${WS_LEGACY_PREFIX}-" --format "table {{.Name}}\t{{.Driver}}\t{{.Mountpoint}}"
                 ;;
             create)
                 shift

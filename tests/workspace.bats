@@ -1,18 +1,32 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
+
 load test_helper
 
 _test_vol_prefix="hermittest"
+_hermit_workspace_bak=""
 
 setup() {
     _test_name="${_test_vol_prefix}-$$-${BATS_TEST_NUMBER}"
+    # Save .hermit-workspace if it exists
+    if [[ -f "$COMPOSE_PROJECT_DIR/.hermit-workspace" ]]; then
+        _hermit_workspace_bak="$(cat "$COMPOSE_PROJECT_DIR/.hermit-workspace")"
+    else
+        _hermit_workspace_bak=""
+    fi
 }
 
 teardown() {
-    # Clean up any test volumes (both isolated-crustacean- and isolated-crustaion-)
-    docker volume ls --filter "name=isolated-crustacean-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
-    docker volume ls --filter "name=isolated-crustaion-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
-    rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
+    # Clean up any test volumes (both isolated-crustacean- and isolated-crustaion- with anchored filters)
+    docker volume ls --filter "name=^isolated-crustacean-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
+    docker volume ls --filter "name=^isolated-crustaion-${_test_vol_prefix}" -q | xargs -r docker volume rm 2>/dev/null || true
+    # Restore .hermit-workspace if it existed before
+    if [[ -n "$_hermit_workspace_bak" ]]; then
+        echo "$_hermit_workspace_bak" > "$COMPOSE_PROJECT_DIR/.hermit-workspace"
+    else
+        rm -f "$COMPOSE_PROJECT_DIR/.hermit-workspace"
+    fi
 }
 
 @test "workspace list runs without error" {
@@ -100,11 +114,12 @@ teardown() {
     docker volume create "$_legacy_vol"
 
     "$HERMIT" workspace switch "$_test_name" &>/dev/null
-    run "$HERMIT" workspace current
+    run --separate-stderr "$HERMIT" workspace current
     [ "$status" -eq 0 ]
-    # workspace current prints volume name to stdout and note to stderr
-    # The note is part of $output in bats, so check if volume name is in output
-    [[ "$output" == "$_legacy_vol"* ]]
+    # Stdout should contain only the volume name with newline
+    [ "$output" = "$_legacy_vol" ]
+    # Stderr should contain the note
+    [[ "$stderr" == Note:* ]]
 
     # Clean up the legacy volume
     docker volume rm "$_legacy_vol"
@@ -142,4 +157,18 @@ teardown() {
     run "$HERMIT" workspace current
     [ "$status" -eq 0 ]
     [ "$output" = "ic-workspace" ]
+}
+
+@test "workspace list does not show non-workspace volumes with underscore naming" {
+    # Create a volume with underscore naming (not a workspace)
+    _non_ws_vol="isolated-crustaion_bats-${RANDOM}"
+    docker volume create "$_non_ws_vol"
+
+    run "$HERMIT" workspace list
+    [ "$status" -eq 0 ]
+    # Non-workspace volume should not appear in list
+    [[ ! "$output" =~ $_non_ws_vol ]]
+
+    # Clean up the non-workspace volume
+    docker volume rm "$_non_ws_vol"
 }
