@@ -7,17 +7,22 @@ load test_helper
     [[ "$output" == *"proxy"* ]] || [[ "$output" == *"Proxy"* ]] || [[ "$output" == *"tinyproxy"* ]]
 }
 
-@test "doctor output contains DNS check label" {
+@test "doctor DNS check passes" {
     run "$HERMIT" doctor
-    [[ "$output" == *"DNS"* ]] || [[ "$output" == *"dns"* ]]
+    [[ "$output" =~ Checking[[:space:]]+DNS.*PASS ]]
 }
 
-@test "doctor output contains allowed domain check" {
+@test "doctor allowed domain check passes" {
     run "$HERMIT" doctor
-    [[ "$output" == *"allowed"* ]] || [[ "$output" == *"Allowed"* ]] || [[ "$output" == *"allowlist"* ]]
+    [[ "$output" =~ Checking[[:space:]]+allowed.*PASS ]]
 }
 
-@test "doctor output contains blocked domain check" {
+@test "doctor blocked domain check passes" {
     run "$HERMIT" doctor
-    [[ "$output" == *"blocked"* ]] || [[ "$output" == *"Blocked"* ]] || [[ "$output" == *"denied"* ]]
+    [[ "$output" =~ Checking[[:space:]]+blocked.*PASS ]]
+}
+
+@test "doctor exits 0 with no MCP servers enabled" {
+    run "$HERMIT" doctor
+    [ "$status" -eq 0 ]
 }

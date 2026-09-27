@@ -352,7 +352,8 @@ case "${1:-}" in
         printf "%-40s" "Checking allowed domain reachable..."
         _curl_fmt='%{http_code}'
         _http_code="$(compose_cmd --profile probe run --rm --no-deps -T --entrypoint bash probe -c \
-            "curl -s -o /dev/null -w '$_curl_fmt' --max-time 10 https://api.anthropic.com" 2>/dev/null || echo "000")"
+            "curl -s -o /dev/null -w '$_curl_fmt' --max-time 10 https://api.anthropic.com" 2>/dev/null)" || true
+        _http_code="${_http_code:-000}"
         if [[ "$_http_code" != "000" ]]; then
             echo "PASS (HTTP $_http_code)"
             _pass=$((_pass + 1))
@@ -363,7 +364,8 @@ case "${1:-}" in
 
         printf "%-40s" "Checking blocked domain denied..."
         _block_code="$(compose_cmd --profile probe run --rm --no-deps -T --entrypoint bash probe -c \
-            "curl -s -o /dev/null -w '%{http_connect}' --max-time 10 https://google.com" 2>/dev/null || echo "000")"
+            "curl -s -o /dev/null -w '%{http_connect}' --max-time 10 https://google.com" 2>/dev/null)" || true
+        _block_code="${_block_code:-000}"
         if [[ "$_block_code" == "403" ]]; then
             echo "PASS (HTTP CONNECT $_block_code)"
             _pass=$((_pass + 1))

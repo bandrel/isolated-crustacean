@@ -65,14 +65,15 @@ load test_helper
 }
 
 @test "subdomain pattern matches subdomains" {
-    # ^(.+\.)?github\.com$ allows raw.github.com and similar subdomains
-    run run_in_container "curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://raw.githubusercontent.com"
+    # ^(.+\.)?github\.com$ allows api.github.com and similar subdomains
+    run run_in_container "curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://api.github.com"
     [ "$status" -eq 0 ]
     [[ "$output" != "000" ]]
 }
 
 @test "subdomain pattern allows base domain" {
     # ^(.+\.)?github\.com$ - the (...)? makes the subdomain optional, so github.com itself should match
+    # (github.com answers on 443; githubusercontent.com does not, so we use github.com as fallback)
     run run_in_container "curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://github.com"
     [ "$status" -eq 0 ]
     [[ "$output" != "000" ]]
@@ -90,9 +91,10 @@ load test_helper
 
 @test "external DNS does not resolve on internal network" {
     # Without DNS on the internal network, external domains should not resolve
-    run run_in_container_no_proxy "dig +short +time=3 +tries=1 example.com"
-    # Should produce empty output (no results)
-    [ -z "$output" ]
+    run run_in_container_no_proxy "getent hosts example.com; echo rc=\$?"
+    # getent returns 2 (host not found) and produces no address lines
+    [[ "$output" == *"rc=2"* ]]
+    [[ ! "$output" =~ ^[0-9]+\.[0-9] ]]
 }
 
 # --- Claude-code image hardening ---
