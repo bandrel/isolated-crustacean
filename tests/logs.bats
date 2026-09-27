@@ -25,7 +25,7 @@ CONNECT   Jan 01 00:00:02 [1]: Proxying refused on filter rule for google.com"
     run "$HERMIT" logs
     [ "$status" -eq 0 ]
     [[ "$output" != *"Could not create file"* ]]
-    [[ "$output" == *"Starting main loop"* ]] || [[ "$output" == *"Initializing"* ]]
+    [[ "$output" == *"Initializing"* ]]
 }
 
 @test "logs --blocked captures real denied hostname" {
@@ -35,11 +35,9 @@ CONNECT   Jan 01 00:00:02 [1]: Proxying refused on filter rule for google.com"
     run_in_container "curl -s -o /dev/null --max-time 10 https://${_host} 2>&1" >/dev/null 2>&1 || true
     # Wait for logs to be written
     sleep 1
-    # Check that hermit logs --blocked shows the denial with the exact hostname
+    # Check that hermit logs --blocked shows the denial with the exact log line format
     run "$HERMIT" logs --blocked
     [ "$status" -eq 0 ]
-    [[ "$output" != "(no blocked requests found)" ]]
-    # Match the exact log line format: "Proxying refused on filtered domain"
-    [[ "$output" == *"$_host"* ]]
-    [[ "$output" == *"refused"* ]]
+    # Match the exact log line format: "Proxying refused on filtered domain \"<host>\""
+    grep -Fq "Proxying refused on filtered domain \"$_host\"" <<<"$output"
 }
