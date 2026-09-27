@@ -603,7 +603,11 @@ case "${1:-}" in
             echo "PASS (HTTP $_http_code)"
             _pass=$((_pass + 1))
         else
-            echo "FAIL (cannot reach api.anthropic.com)"
+            # tinyproxy only accepts clients from RFC1918 ranges (Allow lines
+            # in tinyproxy.conf); print the subnet so a mismatch is obvious.
+            _internal_subnet="$(docker network inspect ic-internal \
+                --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
+            echo "FAIL (cannot reach api.anthropic.com; ic-internal subnet ${_internal_subnet:-unknown} must be within an Allow range in tinyproxy/tinyproxy.conf)"
             _fail=$((_fail + 1))
         fi
 
