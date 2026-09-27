@@ -56,10 +56,19 @@ setup() {
 # Rebuild tinyproxy (the allowlist is baked into its image) and bring it up
 # together with the given MCP services, using hermit's compose file set.
 # --wait blocks on the MCP healthchecks, like hermit's mcp_services_up.
+# Fails the test immediately (with the compose output shown) on any error.
 bring_up_mcp() {
-    hermit_compose build tinyproxy "$@" >/dev/null 2>&1
-    hermit_compose up -d --wait --wait-timeout 90 tinyproxy "$@" >/dev/null 2>&1
     _proxy_rebuilt=1
+    hermit_compose build --quiet tinyproxy "$@" || {
+        echo "bring_up_mcp: build failed for: tinyproxy $*"
+        return 1
+    }
+    hermit_compose up -d --wait --wait-timeout 90 tinyproxy "$@" || {
+        echo "bring_up_mcp: up --wait failed for: tinyproxy $*"
+        hermit_compose ps
+        hermit_compose logs --tail 20 "$@"
+        return 1
+    }
 }
 
 teardown() {
@@ -340,6 +349,79 @@ teardown() {
     [ "$status" -eq 0 ]
     grep -Eq '^filesystem: http://mcp-filesystem:3000/mcp \(HTTP\) - .*Connected' <<<"$output"
     [[ "$output" != *"Failed to connect"* ]]
+}
+
+@test "stale bind-mode override after mcp rm does not break hermit status" {
+    # Reviewer repro: bind override references mcp-filesystem, then the
+    # service is disabled without a rebuild. Every compose_cmd used to die
+    # with 'service "mcp-filesystem" has neither an image nor a build context'.
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    "$HERMIT" mcp sync-workspace --mount "$BATS_TEST_TMPDIR"
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp rm filesystem
+    run "$HERMIT" status
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"neither an image nor a build context"* ]]
+    # The override must still exist and still pin the bind path (not reset)
+    [ -f "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml" ]
+    [ "$(yq -r '.x-hermit.workspace_mode' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml")" = "bind" ]
+    run yq -r '.services | keys | .[]' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml"
+    [[ "$output" != *"mcp-filesystem"* ]]
+    run "$HERMIT" doctor
+    [[ "$output" != *"neither an image nor a build context"* ]]
+}
+
+@test "stale override after manual delete of an enabled file does not break compose_cmd" {
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add git
+    "$HERMIT" mcp sync-workspace --mount "$BATS_TEST_TMPDIR"
+    rm "$COMPOSE_PROJECT_DIR/mcp/enabled/git.yml"
+    run "$HERMIT" status
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"neither an image nor a build context"* ]]
+    # Pruned to what is still enabled; NO_PROXY follows suit
+    run yq -r '.services | keys | .[]' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml"
+    [[ "$output" == *"mcp-filesystem"* ]]
+    [[ "$output" != *"mcp-git"* ]]
+    [ "$(yq -r '.services["claude-code"].environment.NO_PROXY' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml")" = "mcp-filesystem" ]
+    _expected="$(cd "$BATS_TEST_TMPDIR" && pwd)"
+    [ "$(workspace_mount_source mcp-filesystem /data)" = "$_expected" ]
+}
+
+@test "mcp add/rm rewrite the override even with HERMIT_NO_REBUILD=1" {
+    "$HERMIT" mcp sync-workspace
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    [ "$(yq -r '.services["claude-code"].environment.NO_PROXY' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml")" = "mcp-filesystem" ]
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp rm filesystem
+    [ "$(yq -r '.services["claude-code"].environment.NO_PROXY' "$COMPOSE_PROJECT_DIR/mcp/.runtime/workspace.yml")" = "" ]
+}
+
+@test "--mount path containing \$ is not interpolated by compose" {
+    # Under /tmp (not BATS_TEST_TMPDIR) so Docker Desktop can bind-mount it
+    _base="$(mktemp -d /tmp/hermit-dollar.XXXXXX)"
+    _dir="$_base/my mount \$HOME dir"
+    mkdir -p "$_dir"
+    echo marker > "$_dir/.hermit-dollar-marker"
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add filesystem
+    "$HERMIT" mcp sync-workspace --mount "$_dir"
+    _expected="$(cd "$_dir" && pwd)"
+    # `compose config` re-escapes a literal $ as $$ in its own output, so
+    # unescape before comparing. An interpolated path would contain $HOME's
+    # value instead and never match.
+    _cc="$(workspace_mount_source claude-code /home/node/workspace | sed 's/\$\$/$/g')"
+    _fs="$(workspace_mount_source mcp-filesystem /data | sed 's/\$\$/$/g')"
+    [ "$_cc" = "$_expected" ]
+    [ "$_fs" = "$_expected" ]
+    [[ "$_cc" != *"$HOME"* ]]
+    # The recorded source round-trips through current_workspace_source
+    # (exercised by a NO_REBUILD rewrite adding a second service)
+    HERMIT_NO_REBUILD=1 "$HERMIT" mcp add git
+    [ "$(workspace_mount_source mcp-git /data | sed 's/\$\$/$/g')" = "$_expected" ]
+    # Real container proof: the literal directory is what gets mounted
+    run hermit_compose run --rm --no-deps -T --entrypoint bash claude-code \
+        -c 'cat /home/node/workspace/.hermit-dollar-marker'
+    rm -rf "$_base"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"marker"* ]]
 }
 
 @test "mcp sync-workspace --mount with nonexistent path exits non-zero" {
