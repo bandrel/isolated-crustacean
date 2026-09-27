@@ -1,22 +1,36 @@
 x-mcp:
   name: sqlite
-  description: "SQLite database access on the workspace volume"
+  description: "SQLite database at /data/sqlite.db on the shared workspace (upstream archived)"
   transport: streamable-http
   port: 3005
   path: /mcp
 
 services:
   mcp-sqlite:
-    image: mcp/sqlite-server:latest
+    build: ./mcp/images/sqlite
+    image: ic-mcp-sqlite
     networks:
       - internal
     volumes:
       - workspace:/data
-    environment:
-      MCP_TRANSPORT: streamable-http
-      MCP_PORT: "3005"
     expose:
       - "3005"
+    healthcheck:
+      # TCP connect to the bridge port (images have node but no curl)
+      test: ["CMD", "node", "-e", "require('net').connect(3005,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 256
 
 networks:
   internal:

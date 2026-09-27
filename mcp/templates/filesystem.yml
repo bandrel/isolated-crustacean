@@ -1,22 +1,36 @@
 x-mcp:
   name: filesystem
-  description: "Read/write access to the shared workspace volume"
+  description: "Read/write access to the shared workspace (mounted at /data)"
   transport: streamable-http
   port: 3000
   path: /mcp
 
 services:
   mcp-filesystem:
-    image: mcp/filesystem-server:latest
+    build: ./mcp/images/filesystem
+    image: ic-mcp-filesystem
     networks:
       - internal
     volumes:
       - workspace:/data
-    environment:
-      MCP_TRANSPORT: streamable-http
-      MCP_PORT: "3000"
     expose:
       - "3000"
+    healthcheck:
+      # TCP connect to the bridge port (images have node but no curl)
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    pids_limit: 256
 
 networks:
   internal:
