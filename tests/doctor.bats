@@ -9,17 +9,20 @@ load test_helper
 
 @test "doctor DNS check passes" {
     run "$HERMIT" doctor
-    [[ "$output" =~ Checking[[:space:]]+DNS.*PASS ]]
+    # Anchor to line start and use [^[:cntrl:]]* to avoid matching across lines
+    grep -Eq '^Checking DNS resolution[^[:cntrl:]]*PASS' <<<"$output"
 }
 
 @test "doctor allowed domain check passes" {
     run "$HERMIT" doctor
-    [[ "$output" =~ Checking[[:space:]]+allowed.*PASS ]]
+    # Anchor to line start and use [^[:cntrl:]]* to avoid matching across lines
+    grep -Eq '^Checking allowed domain reachable[^[:cntrl:]]*PASS' <<<"$output"
 }
 
 @test "doctor blocked domain check passes" {
     run "$HERMIT" doctor
-    [[ "$output" =~ Checking[[:space:]]+blocked.*PASS ]]
+    # Anchor to line start and use [^[:cntrl:]]* to avoid matching across lines
+    grep -Eq '^Checking blocked domain denied[^[:cntrl:]]*PASS' <<<"$output"
 }
 
 @test "doctor exits 0 with no MCP servers enabled" {

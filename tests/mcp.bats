@@ -156,8 +156,8 @@ teardown() {
     grep -v 'mcp-filesystem' "$ALLOWLIST_FILE" > "$_tmpfile" || true
     mv "$_tmpfile" "$ALLOWLIST_FILE"
     run "$HERMIT" doctor
-    # Doctor should report FAIL with mcp-filesystem in the same line
-    [[ "$output" == *"mcp-filesystem"*"FAIL"* ]]
+    # Doctor should report FAIL on the mcp-filesystem allowlist line (anchor to line start)
+    grep -Eq '^MCP allowlist: mcp-filesystem[^[:cntrl:]]*FAIL' <<<"$output"
     # Doctor should exit non-zero when there's an inconsistency
     [ "$status" -ne 0 ]
 }
