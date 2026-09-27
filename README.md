@@ -42,7 +42,7 @@ The `external` network is a standard bridge with internet access; only tinyproxy
 
 - Docker (with `docker compose`)
 - `jq` — used by `hermit` to edit `$HERMIT_CONFIG_DIR/claude.json` (default `~/.hermit/claude.json`)
-- `yq` — used by `hermit` to parse MCP template metadata
+- `yq` — required by every `hermit` command except `help`; it parses MCP template metadata and the runtime workspace override (`hermit` exits with `Error: yq is required` if it is missing)
 - `bats-core` — required only for `./hermit test`
 
 On macOS: `brew install jq yq bats-core`.
@@ -92,6 +92,22 @@ ANTHROPIC_API_KEY=sk-ant-... ./hermit start
 ```
 
 The container receives the token or key but **cannot access** your host's `~/.claude` directory — it has its own isolated configuration.
+
+### Upgrading from an earlier version
+
+Earlier versions bind-mounted your host `~/.claude` and `~/.claude.json` into the container. If you are upgrading, three things change:
+
+1. **Authentication is no longer shared with the host.** The container now uses `$HERMIT_CONFIG_DIR` (default `~/.hermit/`), which starts empty. Run `/login` once inside `./hermit start`, or export `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` as described above. On Linux hosts you can alternatively copy an existing credentials file: `cp ~/.claude/.credentials.json ~/.hermit/claude/`. On macOS there is no file to copy — Claude Code keeps credentials in the Keychain — so use `/login` or a token.
+
+2. **Old `hermit mcp add` wrote `mcpServers` entries into your host `~/.claude.json`.** Those entries (`http://mcp-<name>:<port>/mcp`) are unreachable from the host and should be removed. This drops every server whose URL starts with `http://mcp-` and leaves everything else untouched (back the file up first):
+
+   ```bash
+   cp ~/.claude.json ~/.claude.json.bak
+   jq 'if .mcpServers then del(.mcpServers[] | select(.url? // "" | test("^http://mcp-"))) else . end' \
+     ~/.claude.json > ~/.claude.json.tmp && mv ~/.claude.json.tmp ~/.claude.json
+   ```
+
+3. **Workspaces created under the old `isolated-crustaion-<name>` prefix keep working.** `hermit workspace list/switch/rm` fall back to the legacy prefix when no `isolated-crustacean-<name>` volume exists, so nothing needs renaming.
 
 ## Usage
 
@@ -229,7 +245,7 @@ internet either way.
 ./hermit start --mount /path/to/project
 ```
 
-This mounts the host directory at `/home/node/workspace` inside the container instead of using the default Docker volume.
+This mounts the host directory at `/home/node/workspace` inside the container instead of using the default Docker volume. The mount is read-write. `hermit` refuses to mount its own checkout or any directory containing it (see [What It Does NOT Guarantee](#what-it-does-not-guarantee)).
 
 ### Copy files into the workspace
 
@@ -311,7 +327,7 @@ Note: Claude Code disables nonessential traffic with `CLAUDE_CODE_DISABLE_NONESS
 
 - **No direct egress**: Claude Code container has zero direct route to the internet. It can only reach external hosts via tinyproxy.
 - **Allowlist enforcement**: Only domains matching regex patterns in `tinyproxy/allowlist` are reachable. All others are rejected with HTTP 403.
-- **No DNS leakage**: The internal network has no default gateway. External hostnames do not resolve on it; only `mcp-*` internal services and tinyproxy itself are reachable by name.
+- **No DNS leakage**: The internal network has no default gateway, and Docker's embedded DNS on an `internal: true` network does not forward external lookups on current Docker Engine versions, so external hostnames do not resolve there; only `mcp-*` internal services and tinyproxy itself are reachable by name. This is verified by `./hermit test` (`external DNS does not resolve on internal network` in `tests/isolation.bats`) rather than assumed — run it after upgrading Docker.
 - **No TLS interception**: Tinyproxy is an explicit forward proxy, not a man-in-the-middle. It cannot read, intercept, or modify API keys, conversation content, or any other TLS-encrypted data.
 - **Isolated configuration**: Container configuration is stored in `$HERMIT_CONFIG_DIR` on the host (default `~/.hermit/`), not mounted from your host's `~/.claude`, so a compromised container cannot modify your host config. Auth credentials persist in this mounted directory across sessions.
 
@@ -321,7 +337,9 @@ Note: Claude Code disables nonessential traffic with `CLAUDE_CODE_DISABLE_NONESS
   - **api.anthropic.com**: Another Claude Code instance or client calling the API with a different key
   - **github.com**: Pushing code to a repo, creating gists, opening issues
   - **registry.npmjs.org**: Publishing packages
+  - **`fetch` MCP server** (if enabled): another HTTP client that reaches allowlisted hosts via tinyproxy. It adds no new destinations, so the bound is the same, but it is one more way to send data to them.
 - **Allowlist as destination boundary, not data boundary**: The allowlist restricts *where* the container can connect, not *what data* it can send. A malicious prompt injection or supply chain attack could exfiltrate credentials or conversation content to any of these services.
+- **`--mount` directories are fully writable**: Everything under `./hermit start --mount <path>` is read-write from the container. Never mount this repository or a directory containing it — a compromised container could rewrite `hermit`, the compose files, the allowlist, or `mcp/enabled/` and gain code execution on the host the next time you run `./hermit`. `hermit` refuses these paths, but it cannot recognise other sensitive directories (your home directory, dotfiles, other tools' checkouts); mount only the project you intend Claude to edit.
 
 ### How to Tighten This
 
